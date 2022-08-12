@@ -1,0 +1,116 @@
+#include <stdio.h>
+#include <NIDAQmx.h>
+#include <chrono>
+#include <thread>
+#define DAQmxErrChk(functionCall) if( DAQmxFailed(error=(functionCall)) ) goto Error; else
+
+float64 data[1000];
+int SAMPLE_RATE = 100000; //in Hz
+int LAST_READ = 0;
+int32       error=0;
+TaskHandle  taskHandle=0;
+int32       read;
+float64 point;
+
+auto LAST_READ_T = std::chrono::high_resolution_clock::now();
+double LAST_NET_T = 0;
+auto now = std::chrono::high_resolution_clock::now();
+double step_time_real;
+double step_time_net;
+auto full_run_time = std::chrono::high_resolution_clock::now();
+
+
+extern "C" {
+int nidaqrec(void)
+{
+    
+    char        errBuff[2048]={'\0'};
+
+    // DAQmx analog voltage channel and timing parameters
+
+    //
+    DAQmxErrChk (DAQmxCreateTask("", &taskHandle));
+
+    
+
+    DAQmxErrChk(DAQmxCreateAIVoltageChan(taskHandle, "Dev1/ai0", "", DAQmx_Val_Cfg_Default, -10.0, 10.0, DAQmx_Val_Volts, NULL));
+
+    DAQmxErrChk(DAQmxSetAIDataXferMech(taskHandle, "Dev1/ai0", DAQmx_Val_ProgrammedIO)); // literally a weird fix
+    DAQmxErrChk(DAQmxCfgSampClkTiming(taskHandle, NULL, SAMPLE_RATE, DAQmx_Val_Rising, DAQmx_Val_ContSamps, 1000)); // sample rate is 10kHz
+
+    // DAQmx Start Code
+
+    DAQmxErrChk(DAQmxStartTask(taskHandle));
+
+    // DAQmx Read Code
+
+    DAQmxErrChk(DAQmxReadAnalogF64(taskHandle, -1, -1, DAQmx_Val_GroupByChannel, data, 1000, &read, NULL));
+
+    // Stop and clear task
+
+    Error:
+        if( DAQmxFailed(error) )
+                DAQmxGetExtendedErrorInfo(errBuff,2048);
+        if( taskHandle!=0 )  {
+                //DAQmxStopTask(taskHandle);
+                //DAQmxClearTask(taskHandle);
+        }
+        if( DAQmxFailed(error) )
+                printf("DAQmx Error: %s\n",errBuff);
+                return 50;
+}
+void read_sample(){
+        //read into data array
+        DAQmxReadAnalogF64(taskHandle, -1, 0, DAQmx_Val_GroupByChannel, data, 1000, &read, NULL);
+}
+}
+
+double clean_up(){
+        DAQmxStopTask(taskHandle);
+        DAQmxClearTask(taskHandle);
+        printf("%lf/n", std::chrono::duration_cast<std::chrono::duration<double>>(std::chrono::high_resolution_clock::now() - full_run_time).count());
+        return 0.0;
+}
+
+
+
+int init_ni(float64 net_clock_dt){
+        //set the sample rate to the network clock rate
+        //SAMPLE_RATE = 1/(net_clock_dt/1000);
+        nidaqrec();
+        full_run_time = std::chrono::high_resolution_clock::now();
+        return 0;
+}
+
+double step_clamp(double t, double I) {
+        // t in seconds , I in pA
+         
+        step_time_net = (t - LAST_NET_T); //time steps in neural network time
+        
+        //printf("%f\n", step_time_net);
+        if (step_time_net <= 0.0){
+                //if for some reason the network time is negative, or zero, do nothing and return the last value
+                return data[999];
+
+        } else {
+                read_sample();
+                //check how much time has passed since last read
+                step_time_real = std::chrono::duration_cast<std::chrono::duration<double>>(std::chrono::high_resolution_clock::now() - LAST_READ_T).count();
+                //time steps since last call of read
+        }
+        
+        
+        
+        if (step_time_net < step_time_real) { //if neural network time is ahead of code time, wait, otherwise proceed
+                printf("last read: %lf\n", (step_time_net - step_time_real));
+        } else {
+                //force wait to slow the network down to match code time
+                std::this_thread::sleep_for(std::chrono::duration<double>((step_time_net - step_time_real)/1000)); //sleep for the difference in time in miliseconds
+                printf("Network running faster than real time with a step diff of: %lf\n", (step_time_net - step_time_real));
+                
+        }
+        LAST_NET_T = t;
+        LAST_READ_T = std::chrono::high_resolution_clock::now();
+        
+        return data[0];
+    }
