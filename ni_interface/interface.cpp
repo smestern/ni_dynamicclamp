@@ -154,11 +154,11 @@ double step_clamp(double t, double I) {
         
         
         if (step_time_net < step_time_real) { //if neural network time is ahead of code time, wait, otherwise proceed
-                printf("Code running slower than real time with a delay of: %lf\n", -1*(step_time_net - step_time_real));
+                //printf("Code running slower than real time with a delay of: %lf\n", -1*(step_time_net - step_time_real));
         } else {
                 //force wait to slow the network down to match code time
-                std::this_thread::sleep_for(std::chrono::duration<double>((step_time_net - step_time_real)/1000)); //sleep for the difference in time in miliseconds
-                printf("Network running faster than real time with a step diff of: %lf\n", (step_time_net - step_time_real));
+                std::this_thread::sleep_for(std::chrono::duration<double>((step_time_net - step_time_real))); //sleep for the difference in time in miliseconds
+                //printf("Network running faster than real time with a step diff of: %lf\n", (step_time_net - step_time_real));
 
         }
         LAST_NET_T = t;

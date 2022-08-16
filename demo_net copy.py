@@ -57,9 +57,7 @@ taubr = 8 * second
 # Membrane Equation + y*(Ee-v)
 eqs = Equations('''
 dv/dt = ( gL*(EL-v) + gL*DeltaT*exp((v - VT)/DeltaT) + ge*(Ee-v) + gi*(Ei-v) - w) * (1./C) : volt (unless refractory)
-d_I = clip(( ge*(Ee-v) + gi*(Ei-v) - w), -5550*pA, 5550*pA) : amp 
-ge_I = ge*(Ee-v) : amp
-gi_I = gi*(Ei-v) : amp
+d_I = clip(( ge*(Ee-v) + gi*(Ei-v)), -250*pA, 250*pA) : amp 
 dw/dt = ( a*(v - EL) - w ) / tauw : amp 
 dgi/dt = -gi*(1./taui) : siemens
 dy/dt = -y*(1./taue) : siemens
@@ -79,13 +77,15 @@ VT : volt
 refrac : second
 input_1 : 1
 input_2 : 1
-input_3 : 1''')
+input_3 : 1
+VR : volt''')
 
 
 # build network
-P = NeuronGroup( N, model=eqs, threshold='v>Vcut', reset='v=VR; w+=br', refractory='refrac')
+P = NeuronGroup( N, model=eqs, threshold='v>Vcut', reset='v=VR; w+=br', refractory='refrac', method='euler')
 P.pr = 1
 P.VT = VT
+P.VR = VR
 P.Vcut = (VT + 5 * DeltaT )
 P.taui = taui
 #print(P.Vcut)
@@ -95,7 +95,11 @@ GABA.tauw = FS['tauw']; GABA.a = FS['a']; GABA.b = FS['b']
 GABA.taue = tauCRH; CRH.taue = taue
 GABA.refrac = 1*ms
 CRH.refrac = (1 + np.abs(np.random.normal(loc=1.5, scale=1, size=500))) *ms
-CRH[:1].run_regularly('''v = step_clamp(t, 0*pA)''')
+
+neuron = P[:1]
+neuron.run_regularly(f'v = step_clamp(t, d_I)', dt=defaultclock.dt)
+neuron.Vcut = -40*mV
+#CRH[:1].Rrsetter.up
 
 
 # connect
@@ -117,13 +121,7 @@ input3 = PoissonInput( CRH, 'ge', 1, 75*Hz, weight='we*input_3')
 P.v = ((randn(len(P)) * (2* mV))) + EL
 P.ge = (randn(len(P)) * 2 + 5) * nS
 P.gi = ((randn(len(P)) * 2 + 5) + 0) * nS
-# monitor
-M = SpikeMonitor( CRH )
-M2 = SpikeMonitor( GABA )
-V = StateMonitor( CRH, ['v', 'w', 'I', 'gi', 'ge', 'y', 'p_w', 
-                       'pr', 'br', 'ge_I', 'gi_I', 'd_I'], record=[0,1,2,3,4,5], dt=1*ms )
-V3 = StateMonitor( CRH, ['d_I'], record=[0,1,2,3,4,5])
-V2 = StateMonitor( GABA, ['v', 'y', 'ge'], record=[0 ], dt=1*ms )
+
 
 # run simulation
 
@@ -131,43 +129,15 @@ print("=== Net Sim Start ===")
 
 
 
-eqs_real_neuron = Equations('''
-v : volt
-I_in = (ge * (0*mV - v)) + (gi*(-80*mV - v)) : amp
-ge : siemens
-gi : siemens
-''')
-
-
-eq_full = eqs_real_neuron 
-real_neuron = NeuronGroup(1, model=eq_full, threshold='v>0*mV', method='euler')
-#real_neuron.run_regularly('v = step_clamp(t, I_in)')
-input4=PoissonInput(real_neuron, 'ge', 1, 50.53785123*Hz, weight='we')
-
-EI2 = Synapses( real_neuron, GABA, on_pre='y=clip((y + wCRH), 0*nS, 30*nS)' ) #*(rand()<p_w)
-EI2.connect( True, p=p_ei )
-
-IE2 = Synapses( GABA, real_neuron, on_pre='gi+=wi' ) #*(rand()<p_w)
-IE2.connect( True, p=p_ie )
-
-# r_IF = Synapses(real_neuron, GABA, on_pre='v += 3*mV')
-# r_IF.connect()
-
-# IF_r = Synapses(GABA, real_neuron, 
-# model='''I_in_post = ge_syn*(0*mV - c_post) : amp (summed)
-# dge_syn/dt = -ge_syn/(10*ms) : siemens
-# ''', on_pre='ge_syn +=  1e-2*nS', method='euler')
-# IF_r.connect()
 
 
 
 
 
-
-Mv = StateMonitor(CRH, ['v'], record=True)
+Mv = StateMonitor(CRH, ['v'], record=[0])
 #Mv2 = StateMonitor(GABA, 'v', record=True)
 # Record the value of v when the threshold is crossed
-M_crossings = SpikeMonitor(real_neuron, 'v', record=True)
+M_crossings = SpikeMonitor(CRH, 'v', record=[0])
 #run(2*second, report='text')
 
 
@@ -200,7 +170,8 @@ time_start = time.time()
 run(20*second, report='text')
 #print(time.time() - time_start)
 plot(Mv.t/ms, Mv.v[0]/mV, label='v', c='k', alpha=0.5)
-scatter(M_crossings.t/ms, np.full(len(M_crossings.t), 10), c='r', marker='x')
+spike_dict = M_crossings.spike_trains()
+scatter(spike_dict[0]/ms, np.full(len(spike_dict[0]), 10), c='r', marker='x')
 twinx()
 #plot(Mv.t/ms, Mv.I_in[0]/pA, label='v2', c='r', alpha=0.5)
 
