@@ -20,7 +20,8 @@ TaskHandle taskHandleWrite=0;
 static int  totalRead=0;
 int32       read=0;
 float64 point;
-
+float64 SF_IN;
+float64 SF_OUT;
 auto LAST_READ_T = std::chrono::high_resolution_clock::now();
 double LAST_NET_T = 0;
 auto now = std::chrono::high_resolution_clock::now();
@@ -89,6 +90,7 @@ void read_sample(){
 }
 
 void write_sample(float64 val){
+        val = val*SF_OUT;
         DAQmxWriteAnalogF64(taskHandleWrite,1, 1, 1.0e-4, DAQmx_Val_GroupByScanNumber,&val,NULL,NULL);
 }
 
@@ -122,12 +124,14 @@ int set_thread_priority_max(){
         return 0;
 }
 
-int init_ni(float64 net_clock_dt){
+int init_ni(float64 net_clock_dt, float64 scalein, float64 scaleout){
         //set the sample rate to the network clock rate
         set_thread_priority_max();
         SAMPLE_RATE = 1/(net_clock_dt/1000);
         nidaqrec();
         full_run_time = std::chrono::high_resolution_clock::now();
+        SF_IN = scalein;
+        SF_OUT = scaleout;
         return 0;
 }
 
@@ -154,7 +158,7 @@ double step_clamp(double t, double I) {
         
         
         if (step_time_net < step_time_real) { //if neural network time is ahead of code time, wait, otherwise proceed
-                //printf("Code running slower than real time with a delay of: %lf\n", -1*(step_time_net - step_time_real));
+                printf("Code running slower than real time with a delay of: %lf\n", -1*(step_time_net - step_time_real));
         } else {
                 //force wait to slow the network down to match code time
                 std::this_thread::sleep_for(std::chrono::duration<double>((step_time_net - step_time_real))); //sleep for the difference in time in miliseconds
@@ -164,6 +168,6 @@ double step_clamp(double t, double I) {
         LAST_NET_T = t;
         LAST_READ_T = std::chrono::high_resolution_clock::now();
         
-        return data*0.1;
+        return data*SF_IN;
     }
 

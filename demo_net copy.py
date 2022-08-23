@@ -1,7 +1,9 @@
+from audioop import add
 from brian2 import *
 from ni_interface.ni_brian2 import *
 import os
 import time
+seed(4323)
 defaultclock.dt = 0.1*ms
 set_device('cpp_standalone', build_on_run=True)
 # state 1 (network-bursting): a = 400 * nS; we = 0.1 * nS; wi = 100 * nS
@@ -78,7 +80,8 @@ refrac : second
 input_1 : 1
 input_2 : 1
 input_3 : 1
-VR : volt''')
+VR : volt
+v_gap : volt''')
 
 
 # build network
@@ -96,10 +99,24 @@ GABA.taue = tauCRH; CRH.taue = taue
 GABA.refrac = 1*ms
 CRH.refrac = (1 + np.abs(np.random.normal(loc=1.5, scale=1, size=500))) *ms
 
-neuron = P[:1]
+neuron = P[0]
 neuron.run_regularly(f'v = step_clamp(t, d_I)', dt=defaultclock.dt)
-neuron.Vcut = -40*mV
+neuron.Vcut = 0*mV
+
+#since idxing into 30 neurons we will essentially create a gap junction to clone the exvivo neurons
+add_neuron = P[1:30]
+add_neuron.run_regularly(f'v = v_gap + 5*mV*randn()', dt=defaultclock.dt)
+gap_syn = Synapses(neuron, add_neuron, '''v_gap_post = v_pre : volt (summed)''', method='euler')
+gap_syn.connect()
+
+
+#neuron.r
 #CRH[:1].Rrsetter.up
+#presynaptic indices
+GABA_TO_0 = np.array([  5,  22, 161, 193, 222, 249, 278, 301, 400, 413, 439, 456, 458,
+       462])
+
+
 
 
 # connect
@@ -127,52 +144,29 @@ P.gi = ((randn(len(P)) * 2 + 5) + 0) * nS
 
 print("=== Net Sim Start ===")
 
-
-
-
-
-
-
-
-Mv = StateMonitor(CRH, ['v'], record=[0])
-#Mv2 = StateMonitor(GABA, 'v', record=True)
+Mv = StateMonitor(CRH, ['v', 'd_I'], record=[0])
+#record the neurons 
+Mv2 = StateMonitor(GABA, 'v', record=GABA_TO_0)
 # Record the value of v when the threshold is crossed
-M_crossings = SpikeMonitor(CRH, 'v', record=[0])
+M_crossings = SpikeMonitor(CRH, record=[0])
 #run(2*second, report='text')
 
+device = init_neuron_device(device=device, scalefactor_out=2)
 
 
-#before this we want to attach our real neuron
-current_dir = os.path.abspath(os.path.dirname(__file__))
-current_dir = "/home/smestern/Dropbox/RTXI/ni_interface"
-#Here we link to our source and header files. Not sure exactly what fixed this but its currently working
-@implementation('cpp', '''//''',  sources=[os.path.join(current_dir,
-                                      'interface.cpp'), '/home/smestern/Dropbox/RTXI/ni_interface/libnidaqmx.so'],
-                headers=['"interface.h"', '"NIDAQmx.h"'],
-                include_dirs=[current_dir], )
-@check_units(t=second, I=pA, result=mV)
-def step_clamp(t, I):
-    return -999*mV/second
-
-
-
-#one of these works cant figure out what fixed it
-prefs.codegen.cpp.include_dirs = [current_dir]
-prefs.codegen.cpp.library_dirs = [current_dir]
-prefs.codegen.cpp.headers = ['"interface.h"', '"NIDAQmx.h"']
-
-#here we call our function to intialize the NIDAQ and start the recording
-device.insert_code('after_start', f'init_ni({defaultclock.dt/ms});') #we want to make sure that the sampling rate is the same as the defaultclock.dt
-
-device.insert_code('before_end', 'clean_up();') #clean up the NIDAQ, log the time
 
 time_start = time.time()
 run(20*second, report='text')
 #print(time.time() - time_start)
+subplot(211)
 plot(Mv.t/ms, Mv.v[0]/mV, label='v', c='k', alpha=0.5)
 spike_dict = M_crossings.spike_trains()
 scatter(spike_dict[0]/ms, np.full(len(spike_dict[0]), 10), c='r', marker='x')
 twinx()
-#plot(Mv.t/ms, Mv.I_in[0]/pA, label='v2', c='r', alpha=0.5)
-
+plot(Mv.t/ms, Mv.d_I[0]/pA, label='v2', c='r', alpha=0.5)
+subplot(212)
+#plot the gaba responders
+for i,_ in enumerate(GABA_TO_0):
+    plot(Mv2.t/ms, Mv2.v[i]/mV, label='v', c='k', alpha=0.5)
 show()
+print('p')
