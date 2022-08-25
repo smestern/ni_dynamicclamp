@@ -1,0 +1,6 @@
+make --dry-run --keep-going --print-directory
+make: Entering directory '/home/smestern/Dropbox/RTXI'
+make: Leaving directory '/home/smestern/Dropbox/RTXI'
+ 
+make: *** No targets specified and no makefile found.  Stop.
+

@@ -70,7 +70,7 @@ prefs.codegen.cpp.library_dirs = [current_dir]
 prefs.codegen.cpp.headers = ['"interface.h"', '"NIDAQmx.h"']
 
 #here we call our function to intialize the NIDAQ and start the recording
-device.insert_code('after_start', f'init_ni({defaultclock.dt/ms});') #we want to make sure that the sampling rate is the same as the defaultclock.dt
+device.insert_code('after_start', f'init_ni({defaultclock.dt/ms},1,1);') #we want to make sure that the sampling rate is the same as the defaultclock.dt
 
 device.insert_code('before_end', 'clean_up();') #clean up the NIDAQ, log the time
 

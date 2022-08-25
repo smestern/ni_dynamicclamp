@@ -1,16 +1,15 @@
 #include <stdio.h>
 
-#include <chrono>
-#include <thread>
 #include <pthread.h>
-extern "C" { 
+
 #include <NIDAQmx.h>
 
 #define DAQmxErrChk(functionCall) if( DAQmxFailed(error=(functionCall)) ) goto Error; else;
-}
 
 
-extern "C" {float64 data;}
+
+
+float64 data;
 
 int SAMPLE_RATE = 100000; //in Hz
 int LAST_READ = 0;
@@ -22,15 +21,14 @@ int32       read=0;
 float64 point;
 float64 SF_IN;
 float64 SF_OUT;
-auto LAST_READ_T = std::chrono::high_resolution_clock::now();
+double LAST_READ_T = 0;
 double LAST_NET_T = 0;
-auto now = std::chrono::high_resolution_clock::now();
+double now = 0;
 double step_time_real;
 double step_time_net;
-auto full_run_time = std::chrono::high_resolution_clock::now();
+double full_run_time = 0;
 
 
-extern "C" {
 
 
 int nidaqrec(void)
@@ -105,31 +103,20 @@ void clean_up_ni(){
 
 
 
-}
 
 double clean_up(){
         clean_up_ni();  //clean up NI
-        printf("%lf/n", std::chrono::duration_cast<std::chrono::duration<double>>(std::chrono::high_resolution_clock::now() - full_run_time).count());
+
         return 0.0;
 }
 
-int set_thread_priority_max(){
-        int policy;
-        struct sched_param param;
 
-        pthread_getschedparam(pthread_self(), &policy, &param);
-        param.sched_priority = sched_get_priority_max(policy);
-        pthread_setschedparam(pthread_self(), policy, &param);
-
-        return 0;
-}
 
 int init_ni(float64 net_clock_dt, float64 scalein, float64 scaleout){
         //set the sample rate to the network clock rate
-        //set_thread_priority_max();
         SAMPLE_RATE = 1/(net_clock_dt/1000);
         nidaqrec();
-        full_run_time = std::chrono::high_resolution_clock::now();
+        full_run_time = 0;
         SF_IN = scalein;
         SF_OUT = scaleout;
         return 0;
@@ -147,26 +134,26 @@ double step_clamp(double t, double I) {
 
         } else {
                 //read the sample from the NI card
-                read_sample();
+                //read_sample();
                 //write the sample to the NI card
-                write_sample(I*1e9);
+                //write_sample(I*1e9);
                 //check how much time has passed since last read
-                step_time_real = std::chrono::duration_cast<std::chrono::duration<double>>(std::chrono::high_resolution_clock::now() - LAST_READ_T).count();
+                step_time_real = 0;//0std::chrono::duration_cast<std::chrono::duration<double>>(std::chrono::high_resolution_clock::now() - LAST_READ_T).count();
                 //time steps since last call of read
         }
         
         
         
         if (step_time_net < step_time_real) { //if neural network time is ahead of code time, wait, otherwise proceed
-                printf("Code running slower than real time with a delay of: %lf\n", 1000*(step_time_real));
+                printf("Code running slower than real time with a delay of: %lf\n", -1*(step_time_net - step_time_real));
         } else {
                 //force wait to slow the network down to match code time
-                std::this_thread::sleep_for(std::chrono::duration<double>((step_time_net - step_time_real))); //sleep for the difference in time in miliseconds
+                //std::this_thread::sleep_for(std::chrono::duration<double>((step_time_net - step_time_real))); //sleep for the difference in time in miliseconds
                 printf("Network running faster than real time with a step diff of: %lf\n", (step_time_net - step_time_real));
 
         }
         LAST_NET_T = t;
-        LAST_READ_T = std::chrono::high_resolution_clock::now();
+        LAST_READ_T = 0;//std::chrono::high_resolution_clock::now();
         
         return data*SF_IN;
     }

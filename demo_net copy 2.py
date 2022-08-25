@@ -1,9 +1,10 @@
+from audioop import add
 from brian2 import *
 from ni_interface.ni_brian2 import *
 import os
 import time
 seed(4323)
-defaultclock.dt = 0.1*ms
+defaultclock.dt = 0.05*ms
 set_device('cpp_standalone', build_on_run=True)
 # state 1 (network-bursting): a = 400 * nS; we = 0.1 * nS; wi = 100 * nS
 # state 2 (network-reduced-inhibition): a = 400 * nS; we = 0.1 * nS; wi = 10 * nS
@@ -98,15 +99,17 @@ GABA.taue = tauCRH; CRH.taue = taue
 GABA.refrac = 1*ms
 CRH.refrac = (1 + np.abs(np.random.normal(loc=1.5, scale=1, size=500))) *ms
 
-neuron = P[:1]
-neuron.run_regularly(f'v = step_clamp(t, d_I*int(t/second>3))', dt=defaultclock.dt)
+neuron = P[0]
+neuron.run_regularly(f'v = step_clamp(t, d_I)', dt=defaultclock.dt)
 neuron.Vcut = 0*mV
 
+#since idxing into 30 neurons we will essentially create a gap junction to clone the exvivo neurons
+# add_neuron = P[1:30]
+# add_neuron.run_regularly(f'v = v_gap + 5*mV*randn()', dt=defaultclock.dt)
+# gap_syn = Synapses(neuron, add_neuron, '''v_gap_post = v_pre : volt (summed)''', method='euler')
+# gap_syn.connect()
 
-add_neuron = P[1:30]
-add_neuron.run_regularly(f'v = v_gap + 5*mV*randn()', dt=defaultclock.dt)
-gap_syn = Synapses(neuron, add_neuron, '''v_gap_post = v_pre : volt (summed)''', method='euler')
-gap_syn.connect()
+
 #neuron.r
 #CRH[:1].Rrsetter.up
 #presynaptic indices
@@ -143,12 +146,12 @@ print("=== Net Sim Start ===")
 
 Mv = StateMonitor(CRH, ['v', 'd_I'], record=[0])
 #record the neurons 
-Mv2 = StateMonitor(GABA, 'v', record=GABA_TO_0)
+#Mv2 = StateMonitor(GABA, 'v', record=GABA_TO_0)
 # Record the value of v when the threshold is crossed
-M_crossings = SpikeMonitor(CRH, 'v', record=[0])
+M_crossings = SpikeMonitor(CRH, record=[0])
 #run(2*second, report='text')
 
-device = init_neuron_device(device=device, dt=defaultclock.dt, scalefactor_out=2)
+device = init_neuron_device(device=device, scalefactor_out=2)
 
 
 
@@ -163,7 +166,7 @@ twinx()
 plot(Mv.t/ms, Mv.d_I[0]/pA, label='v2', c='r', alpha=0.5)
 subplot(212)
 #plot the gaba responders
-for i,_ in enumerate(GABA_TO_0):
-    plot(Mv2.t/ms, Mv2.v[i]/mV, label='v', c='k', alpha=0.5)
+#for i,_ in enumerate(GABA_TO_0):
+ #   plot(Mv2.t/ms, Mv2.v[i]/mV, label='v', c='k', alpha=0.5)
 show()
 print('p')
