@@ -1,0 +1,47 @@
+N = <<N>>
+K = <<K>>
+initiator = <<initiator>>
+min_conduction_speed = <<min_speed>>
+max_conduction_speed = <<max_speed>>
+
+connector = <<connector>>
+
+T = <<T>>
+dt = <<dt>>
+
+sigma_space = <<sigma_space>>
+
+ge = <<ge>>
+gi = <<gi>>
+taum = <<taum>>
+vr = <<vr>>
+vreset = <<vreset>>
+vth = <<vth>>
+taur = <<taur>>
+Ee = <<Ee>>
+Ei = <<Ei>>
+taue = <<taue>>
+taui = <<taui>>
+El = <<El>>
+Ie = <<Ie>>
+Cm = <<Cm>>
+L = <<L>>
+
+synapse_delay = <<synapse_delay>>
+start_record_time = <<start_record_time>>
+stop_record_time = <<T>>
+bin_size = <<bin_size>>
+record_downsample_factor = <<record_downsample_factor>>
+
+save_connectivity = <<save_connectivity>>
+
+vm_mean = <<vm_mean>>
+vm_sigma = <<vm_sigma>>
+ge_mean = <<ge_mean>>
+ge_sigma = <<ge_sigma>>
+gi_mean = <<gi_mean>>
+gi_sigma = <<gi_sigma>>
+
+report_minutes = <<report_minutes>>
+
+p_release = <<p_release>>

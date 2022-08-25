@@ -153,7 +153,7 @@ device = init_neuron_device(device=device, dt=defaultclock.dt, scalefactor_out=2
 
 
 time_start = time.time()
-run(20*second, report='text')
+run(600*second, report='text')
 #print(time.time() - time_start)
 subplot(211)
 plot(Mv.t/ms, Mv.v[0]/mV, label='v', c='k', alpha=0.5)

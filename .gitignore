@@ -3,5 +3,4 @@ output/
 ni_interface/*.so
 ni_interface/*.o
 tmp/
-NETSIM-dev-master/
 custom_module/
