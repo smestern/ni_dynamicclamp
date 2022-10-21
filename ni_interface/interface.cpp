@@ -149,7 +149,7 @@ double step_clamp(double t, double I) {
                 //read the sample from the NI card
                 read_sample();
                 //write the sample to the NI card
-                write_sample(I*1e9);
+                
                 //check how much time has passed since last read
                 step_time_real = std::chrono::duration_cast<std::chrono::duration<double>>(std::chrono::high_resolution_clock::now() - LAST_READ_T).count();
                 //time steps since last call of read
@@ -158,12 +158,14 @@ double step_clamp(double t, double I) {
         
         
         if (step_time_net < step_time_real) { //if neural network time is ahead of code time, wait, otherwise proceed
+                
                 printf("Code running slower than real time with a delay of: %lf\n", 1000*(step_time_real));
+                //dont write just read and return
         } else {
                 //force wait to slow the network down to match code time
                 std::this_thread::sleep_for(std::chrono::duration<double>((step_time_net - step_time_real))); //sleep for the difference in time in miliseconds
                 printf("Network running faster than real time with a step diff of: %lf\n", (step_time_net - step_time_real));
-
+                write_sample(I*1e9); //write the current to the NI card
         }
         LAST_NET_T = t;
         LAST_READ_T = std::chrono::high_resolution_clock::now();

@@ -8,7 +8,7 @@ make: *** No rule to make target 'all'.  Stop.
 # This is free software: you are free to change and redistribute it.
 # There is NO WARRANTY, to the extent permitted by law.
 
-# Make data base, printed on Thu Aug 25 09:53:04 2022
+# Make data base, printed on Sat Aug 27 08:48:47 2022
 
 # Variables
 
@@ -47,7 +47,7 @@ VSCODE_NLS_CONFIG = {"locale":"en-us","availableLanguages":{},"_languagePackSupp
 # environment
 _ = /usr/share/code/code
 # environment
-JOURNAL_STREAM = 8:57510
+JOURNAL_STREAM = 8:63581
 # environment
 XDG_CONFIG_DIRS = /etc/xdg/xdg-ubuntu:/etc/xdg
 # makefile
@@ -63,7 +63,7 @@ XDG_DATA_DIRS = /usr/share/ubuntu:/usr/local/share/:/usr/share/:/var/lib/snapd/d
 # environment
 DBUS_SESSION_BUS_ADDRESS = unix:path=/run/user/1000/bus
 # environment
-MANAGERPID = 1238
+MANAGERPID = 1225
 # environment
 LESSOPEN = | /usr/bin/lesspipe %s
 # environment
@@ -75,7 +75,7 @@ PATH = /home/smestern/.local/bin:/home/smestern/anaconda3/condabin:/home/smester
 # environment
 GPG_AGENT_INFO = /run/user/1000/gnupg/S.gpg-agent:0:1
 # environment
-SESSION_MANAGER = local/smestern:@/tmp/.ICE-unix/1682,unix/smestern:/tmp/.ICE-unix/1682
+SESSION_MANAGER = local/smestern:@/tmp/.ICE-unix/2228,unix/smestern:/tmp/.ICE-unix/2228
 # environment
 XDG_RUNTIME_DIR = /run/user/1000
 # environment
@@ -83,7 +83,7 @@ XDG_MENU_PREFIX = gnome-
 # environment
 ELECTRON_RUN_AS_NODE = 1
 # environment
-INVOCATION_ID = e4282afeda6d4d23b0a9f261fd031c83
+INVOCATION_ID = bd359d02cfcc4dfc985632d2b06ce201
 # default
 .FEATURES := target-specific order-only second-expansion else-if shortest-stem undefine oneshell archives jobserver output-sync check-symlink load
 # environment
@@ -93,11 +93,11 @@ XDG_SESSION_DESKTOP = ubuntu
 # environment
 SSH_AUTH_SOCK = /run/user/1000/keyring/ssh
 # environment
-GIO_LAUNCHED_DESKTOP_FILE_PID = 54171
+GIO_LAUNCHED_DESKTOP_FILE_PID = 4004
 # automatic
 %F = $(notdir $%)
 # environment
-DISPLAY = :0
+DISPLAY = :1
 # environment
 CONDA_EXE = /home/smestern/anaconda3/bin/conda
 # environment
@@ -105,7 +105,7 @@ PWD = /home/smestern/Dropbox/RTXI
 # default
 .LOADED := 
 # environment
-SSH_AGENT_PID = 1605
+SSH_AGENT_PID = 2154
 # environment
 ORIGINAL_XDG_CURRENT_DESKTOP = ubuntu:GNOME
 # environment
@@ -117,7 +117,7 @@ HOME = /home/smestern
 # environment
 LESSCLOSE = /usr/bin/lesspipe %s %s
 # environment
-VSCODE_CODE_CACHE_PATH = /home/smestern/.config/Code/CachedData/92d25e35d9bf1a6b16f7d0758f25d48ace11e5b9
+VSCODE_CODE_CACHE_PATH = /home/smestern/.config/Code/CachedData/e4503b30fc78200f846c62cf8091b76ff5547662
 # environment
 LOGNAME = smestern
 # environment
@@ -159,7 +159,7 @@ MAKE_COMMAND := make
 # automatic
 *F = $(notdir $*)
 # environment
-VSCODE_IPC_HOOK = /run/user/1000/vscode-07bd217e-1.69.0-main.sock
+VSCODE_IPC_HOOK = /run/user/1000/vscode-07bd217e-1.70.2-main.sock
 # makefile
 MAKEFLAGS = pqrR
 # environment
@@ -203,7 +203,7 @@ GJS_DEBUG_OUTPUT = stderr
 # environment
 LANG = C
 # environment
-VSCODE_PID = 54171
+VSCODE_PID = 4004
 # environment
 _CE_CONDA = 
 # variable set hash-table stats:
@@ -215,9 +215,9 @@ _CE_CONDA =
 
 # Directories
 
-# . (device 2053, inode 20188548): 15 files, no impossibilities.
+# . (device 2053, inode 20188548): 14 files, no impossibilities.
 
-# 15 files, no impossibilities in 1 directories.
+# 14 files, no impossibilities in 1 directories.
 
 # Implicit Rules
 
@@ -267,12 +267,12 @@ GNUmakefile:
 
 # No general ('VPATH' variable) search path.
 
-# strcache buffers: 1 (0) / strings = 23 / storage = 254 B / avg = 11 B
-# current buf: size = 8162 B / used = 254 B / count = 23 / avg = 11 B
+# strcache buffers: 1 (0) / strings = 22 / storage = 265 B / avg = 12 B
+# current buf: size = 8162 B / used = 265 B / count = 22 / avg = 12 B
 
-# strcache performance: lookups = 26 / hit rate = 11%
+# strcache performance: lookups = 25 / hit rate = 12%
 # hash-table stats:
-# Load=23/8192=0%, Rehash=0, Collisions=1/26=4%
-# Finished Make data base on Thu Aug 25 09:53:04 2022
+# Load=22/8192=0%, Rehash=0, Collisions=1/25=4%
+# Finished Make data base on Sat Aug 27 08:48:47 2022
 
  
