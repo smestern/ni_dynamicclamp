@@ -131,7 +131,8 @@ double step_clamp(double t, double I) {
         if (step_time_net <= 0.0){
                 //if for some reason the network time is negative, or zero, do nothing and return the last value
                 LAST_NET_T = t;
-                return data;
+                read_sample();
+                return data*SF_IN;
 
         } else {
                 //read the sample from the NI card
