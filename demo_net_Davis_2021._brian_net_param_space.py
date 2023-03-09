@@ -10,7 +10,7 @@ from brian2 import *
 from scipy.io import savemat, loadmat
 from ni_interface.ni_brian2 import *
 seed(4323)
-defaultclock.dt = 0.01*ms
+defaultclock.dt = 0.1*ms
 set_device('cpp_standalone', build_on_run=True)
 N=10000
 K=100

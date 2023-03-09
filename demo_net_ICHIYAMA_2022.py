@@ -7,7 +7,7 @@ defaultclock.dt = 0.1*ms
 set_device('cpp_standalone', build_on_run=True)
 # state 1 (network-bursting): a = 400 * nS; we = 0.1 * nS; wi = 100 * nS
 # state 2 (network-reduced-inhibition): a = 400 * nS; we = 0.1 * nS; wi = 10 * nS
-# state 3 (network-tonic): a = 4 * nS; we = 10 * nS; wi = 100 * nS
+# state 3 (network-tonic): a = 4 * nS; we = 10 * nS; wi = 100 * nSs
 import time
 start_scope()
 start_time = time.time()
@@ -148,7 +148,7 @@ Mv2 = StateMonitor(GABA, 'v', record=GABA_TO_0)
 M_crossings = SpikeMonitor(CRH)
 #run(2*second, report='text')
 
-device = init_neuron_device(device=device, dt=defaultclock.dt, scalefactor_out=2)
+device = init_neuron_device(device=device, dt=defaultclock.dt, scalefactor_out=2.5)
 
 
 

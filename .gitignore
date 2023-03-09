@@ -5,3 +5,5 @@ ni_interface/*.o
 tmp/
 custom_module/
 NETSIM-dev-master/*
+data/
+example_1_complex/*

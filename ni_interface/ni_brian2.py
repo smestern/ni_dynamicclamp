@@ -32,7 +32,7 @@ def init_neuron_device(device, dt=defaultclock.dt, scalefactor_in=0.1, scalefact
     device.insert_code('before_end', 'clean_up();') #clean up the NIDAQ, log the time
     return device
 
-def attach_neuron(neurongroup, idx=0, v_mem_var='v', i_mem_var='I_in'):
+def attach_neuron(neurongroup, idx=0, v_mem_var='v', i_mem_var='I_in', dt=defaultclock.dt):
     '''
     Helper function to subsitute neuron in brian2 neuron group with an invitro neuron. 
     '''
@@ -41,7 +41,7 @@ def attach_neuron(neurongroup, idx=0, v_mem_var='v', i_mem_var='I_in'):
     neuron = neurongroup[idx]
     
     #add a run regularly statement to the neuron group
-    neuron.run_regularly(f'{v_mem_var} = step_clamp(t, {i_mem_var})', dt=defaultclock.dt)
+    neuron.run_regularly(f'{v_mem_var} = step_clamp(t, {i_mem_var})', dt=dt)
     #update the resetter of the full group to exclude the neuron we are attaching
     #replace the remaining idxs with a gapjunction like synapse
 

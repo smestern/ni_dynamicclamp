@@ -46,9 +46,9 @@ int nidaqrec(void)
         DAQmxErrChk (DAQmxCreateTask("", &taskHandleWrite));
         
         //Analog input channel
-        DAQmxErrChk(DAQmxCreateAIVoltageChan(taskHandle, "Dev1/ai0", "", DAQmx_Val_RSE, -1.0, 1.0, DAQmx_Val_Volts, NULL));
+        DAQmxErrChk(DAQmxCreateAIVoltageChan(taskHandle, "Dev2/ai0", "", DAQmx_Val_RSE, -1.0, 1.0, DAQmx_Val_Volts, NULL));
         //Analog output channel
-        DAQmxErrChk(DAQmxCreateAOVoltageChan(taskHandleWrite, "Dev1/ao0", "", -1.0, 1.0, DAQmx_Val_Volts, NULL));
+        DAQmxErrChk(DAQmxCreateAOVoltageChan(taskHandleWrite, "Dev2/ao0", "", -1.0, 1.0, DAQmx_Val_Volts, NULL));
 
         //DAQmxErrChk (DAQmxCfgSampClkTiming(taskHandle,"",SAMPLE_RATE,DAQmx_Val_Rising,DAQmx_Val_ContSamps,1000));
 
