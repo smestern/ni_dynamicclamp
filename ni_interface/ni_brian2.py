@@ -17,6 +17,15 @@ current_dir = os.path.abspath(os.path.dirname(__file__))
                 include_dirs=[current_dir], )
 @check_units(t=second, I=pA, result=mV)
 def step_clamp(t, I):
+    """_summary_
+
+    Args:
+        t (_type_): _description_
+        I (_type_): _description_
+
+    Returns:
+        _type_: _description_
+    """
     return -999*mV/second
 
 

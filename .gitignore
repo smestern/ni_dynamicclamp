@@ -7,3 +7,5 @@ custom_module/
 NETSIM-dev-master/*
 data/
 example_1_complex/*
+*.abf
+*.pkl
