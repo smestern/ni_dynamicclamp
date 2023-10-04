@@ -9,3 +9,6 @@ data/
 example_1_complex/*
 *.abf
 *.pkl
+*/__pycache__/*
+*.pyc
+

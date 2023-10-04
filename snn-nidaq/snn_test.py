@@ -1,58 +1,103 @@
 import torch, torch.nn as nn
 import snntorch as snn
+import sys
+import faulthandler
+faulthandler.enable() #to debug seg faults and timeouts
 batch_size = 128
 data_path='./data/mnist'
+sys.path.append('/home/smestern/Dropbox/RTXI/ni_interface')
+import ni_generic as ni
+
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 import numpy as np
-from nidaq_SNN import niDAQ
-
+import matplotlib.pyplot as plt
+import nidaqmx
 # Network Architecture
 num_inputs = 28*28
-num_hidden = 1000
+num_hidden = 100
 num_outputs = 10
 
 # Temporal Dynamics
-num_steps = 25
+num_steps = int(0.25 * (1/0.001))
 beta = 0.95
 
 
 # Define Network
-class Net(nn.Module):
-    def __init__(self):
+class NiDAQ_NET(nn.Module):
+    def __init__(self, daq):
         super().__init__()
 
         # Initialize layers
         self.fc1 = nn.Linear(num_inputs, num_hidden)
-        self.lif1 = snn.Leaky(beta=beta)
-        self.fc2 = nn.Linear(num_hidden, num_outputs)
-        self.lif2 = niDAQ(beta=beta)
+        self.lif1 = snn.Synaptic(beta=beta, alpha=0.8, init_hidden=False, reset_mechanism='zero', learn_alpha=True, learn_beta=True)
+        self.lif2 = snn.Synaptic(beta=beta, alpha=0.8, reset_mechanism='zero')
+        
+        self.layers = [self.fc1, self.lif1, self.lif2]
+
+        #intiliaze DAQ
+        #unit to replace, NOTE: parameterize this later
+        self.unit_idx = 0
+        self.daq = daq
+
+
+    def _forward(self, x):
+        syn1, mem1 = self.lif1.init_synaptic()
+        syn2, mem2 = self.lif2.init_synaptic()
+
+        spk2_rec = []  # Record the output trace of spikes
+        mem2_rec = []  # Record the output trace of membrane potential
+
+        #record the cur, syn1 and mem for the chosen unit
+        input_rec = []
+        spikes_rec = []
+        mem_rec = []
+        for step in range(num_steps):
+                cur1 = self.fc1(x)
+                spk1, syn1, mem1 = self.lif1(cur1, syn1, mem1)
+                cur2 = spk1 #torch.zeros((batch_size, num_outputs), device=device)
+                spk2, syn2, mem2 = self.lif2(cur2, syn2, mem2)
+
+                spk2_rec.append(spk2)
+                mem2_rec.append(mem2)
+
+                #record the cur, syn1 and mem for the chosen unit
+                input_rec.append(cur1)
+                spikes_rec.append(spk1)
+                mem_rec.append(mem1)
+
+
+        return torch.stack(spk2_rec, dim=0), torch.stack(mem2_rec, dim=0), torch.stack(input_rec, dim=0), torch.stack(spikes_rec, dim=0), torch.stack(mem_rec, dim=0)
 
     def forward(self, x):
+        spk_rec, mem_rec, cur_daq, spikes_daq, mem_daq = self._forward(x)
 
-        # Initialize hidden states at t=0
-        mem1 = self.lif1.init_leaky()
-        mem2 = self.lif2.init_leaky()
+        #write and read from DAQ
+        #the curr and spikes are in the format of [num_steps, batch_size, num_units]
+        #we want to write the spikes of the chosen unit to the DAQ
+        out_mem = []
+        for x in range(cur_daq.shape[1]):
+            temp_cur = cur_daq[:, x, self.unit_idx]
+            temp_spikes = spikes_daq[:, x, self.unit_idx]
+            adq = self.write_daq(temp_spikes+temp_cur, num_steps)
+            out_mem.append(torch.tensor(adq))
 
-        # Record the final layer
-        spk2_rec = []
-        mem2_rec = []
+        out_mem = torch.stack(out_mem, dim=1)
 
-        for step in range(num_steps):
-            cur1 = self.fc1(x)
-            spk1, mem1 = self.lif1(cur1, mem1)
-            cur2 = self.fc2(spk1)
-            spk2, mem2 = self.lif2(cur2, mem2)
-            spk2_rec.append(spk2)
-            mem2_rec.append(mem2)
+        #for now compute the error here
+        loss_daq = torch.nn.functional.mse_loss(out_mem, mem_daq[:, :, self.unit_idx])
 
-        return torch.stack(spk2_rec, dim=0), torch.stack(mem2_rec, dim=0)
+        self.out_mem = out_mem
+        return spk_rec, mem_rec, loss_daq
+
+    def write_daq(self, input, samps):
+        #write to DAQ
+        return ni.loop_clamp(input.detach().cpu().numpy())
 
 def print_batch_accuracy(data, targets, train=False):
-    output, _ = net(data.view(batch_size, -1))
-    _, idx = output.sum(dim=0).max(1)
-    acc = np.mean((targets == idx).detach().cpu().numpy())
+    _, output,_ = net(data.view(batch_size, -1))
+    acc = SF.accuracy_rate(output, targets, population_code=True, num_classes=10)
 
     if train:
         print(f"Train set accuracy for a single minibatch: {acc*100:.2f}%")
@@ -67,6 +112,9 @@ def train_printer():
     print_batch_accuracy(test_data, test_targets, train=False)
     print("\n")
 
+
+daq = ni.init_ni(0.001, 0.1, 1/0.5)
+
 loss = nn.CrossEntropyLoss()
 
 # Define a transform
@@ -80,7 +128,7 @@ mnist_train = datasets.MNIST(data_path, train=True, download=True, transform=tra
 mnist_test = datasets.MNIST(data_path, train=False, download=True, transform=transform)
 
 # Create DataLoaders
-train_loader = DataLoader(mnist_train, batch_size=batch_size, shuffle=True)
+train_loader = DataLoader(mnist_train, batch_size=batch_size, shuffle=True, drop_last=True)
 test_loader = DataLoader(mnist_test, batch_size=batch_size, shuffle=True)
 
 from snntorch import surrogate
@@ -89,13 +137,13 @@ beta = 0.9  # neuron decay rate
 spike_grad = surrogate.fast_sigmoid()
 
 #  Initialize Network
-net = Net().to(device)
+net = NiDAQ_NET(daq).to(device)
 from snntorch import utils
 
 import snntorch.functional as SF
 
-optimizer = torch.optim.Adam(net.parameters(), lr=2e-3, betas=(0.9, 0.999))
-loss = nn.CrossEntropyLoss()
+optimizer = torch.optim.Adam(net.parameters(), lr=2e-4, betas=(0.9, 0.999))
+loss = SF.loss.ce_count_loss(population_code=True, num_classes=10)
 
 num_epochs = 5
 loss_hist = []
@@ -114,13 +162,11 @@ for epoch in range(num_epochs):
 
         # forward pass
         net.train()
-        spk_rec, mem_rec = net(data.view(batch_size, -1))
+        spk_rec, mem_rec, loss_daq = net(data.view(batch_size, -1))
 
-        # initialize the loss & sum over time
-        loss_val = torch.zeros((1), device=device)
-        for step in range(num_steps):
-            loss_val += loss(mem_rec[step], targets)
-
+        
+        #loss_val = loss(spk_rec, targets)/4
+        loss_val = loss_daq
         # Gradient calculation + weight update
         optimizer.zero_grad()
         loss_val.backward()
@@ -137,16 +183,34 @@ for epoch in range(num_epochs):
             test_targets = test_targets.to(device)
 
             # Test set forward pass
-            test_spk, test_mem = net(test_data.view(batch_size, -1))
+            test_spk, test_mem, _ = net(test_data.view(batch_size, -1))
 
             # Test set loss
-            test_loss = torch.zeros((1), device=device)
-            for step in range(num_steps):
-                test_loss += loss(test_mem[step], test_targets)
+            test_loss = loss(test_spk, test_targets)
             test_loss_hist.append(test_loss.item())
 
             # Print train/test loss/accuracy
             if counter % 50 == 0:
                 train_printer()
+                plot_mem = test_mem[:, 0, :40].detach().cpu().numpy().T
+                plt.figure(figsize=(15, 5), num=0)
+                plt.clf()
+                for neuron in range(plot_mem.shape[0]):
+                    if neuron != 0:
+                        continue
+                    spike_times = np.where(test_spk[:, 0, neuron].detach().cpu().numpy() == 1)[0]
+                    plt.plot(plot_mem[neuron])
+                    plt.plot(net.out_mem[:,0])
+                    if len(spike_times) > 0:
+                        plt.scatter(spike_times, plot_mem[neuron, spike_times], s=2, c='r')
+                    
+                plt.xlabel('Time Steps')
+                plt.ylabel('')
+                plt.title('Membrane Potential of First 40 Neurons in the First Layer')
+                plt.pause(0.1)
+
             counter += 1
             iter_counter +=1
+            #plot the membrane potential of the first 40 neurons in the first layer
+            
+            

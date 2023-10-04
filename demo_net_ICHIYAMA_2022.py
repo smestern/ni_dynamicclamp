@@ -3,15 +3,14 @@ from ni_interface.ni_brian2 import *
 import os
 import time
 seed(43)
-defaultclock.dt = 0.05*ms
+DYN_CLAMP = True
+defaultclock.dt = 0.1*ms
 set_device('cpp_standalone', build_on_run=True)
-# state 1 (network-bursting): a = 400 * nS; we = 0.1 * nS; wi = 100 * nS
-# state 2 (network-reduced-inhibition): a = 400 * nS; we = 0.1 * nS; wi = 10 * nS
-# state 3 (network-tonic): a = 4 * nS; we = 10 * nS; wi = 100 * nSs
-import time
+
 start_scope()
 start_time = time.time()
 seed(43)
+
 # network parameters
 N = 1e3
 p_ei = 0.02
@@ -88,7 +87,7 @@ P.pr = 1; P2.pr = 1
 P.VT = VT; P2.VT = VT
 P.VR = VR; P2.VR = VR
 P.Vcut = (VT + 5 * DeltaT ); P2.Vcut = (VT + 5 * DeltaT )
-P.taui = taui;       
+P.taui = taui; P2.taui = taui     
 CRH = P2; GABA = P
 CRH.tauw = LTS['tauw']; CRH.a = LTS['a']; CRH.b = LTS['b']
 GABA.tauw = FS['tauw']; GABA.a = FS['a']; GABA.b = FS['b']
@@ -96,9 +95,10 @@ GABA.taue = tauCRH; CRH.taue = taue
 GABA.refrac = 1*ms
 CRH.refrac = (1 + np.abs(np.random.normal(loc=1.5, scale=1, size=500))) *ms
 
-neuron = P2
-neuron.run_regularly(f'v = step_clamp(t, d_I*int(t/second>3))', dt=defaultclock.dt)
-neuron.Vcut = 0*mV
+if DYN_CLAMP:
+       neuron = P2
+       neuron.run_regularly(f'v =  step_clamp(t, d_I*int(t/second>3))', dt=defaultclock.dt)
+       neuron.Vcut = 0*mV
 
 
 
@@ -146,8 +146,8 @@ Mv2 = StateMonitor(GABA, 'v', record=GABA_TO_0)
 # Record the value of v when the threshold is crossed
 M_crossings = SpikeMonitor(CRH)
 #run(2*second, report='text')
-
-device = init_neuron_device(device=device, dt=defaultclock.dt)
+if DYN_CLAMP:
+       device = init_neuron_device(device=device, dt=defaultclock.dt)
 
 
 

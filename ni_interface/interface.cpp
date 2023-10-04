@@ -10,7 +10,7 @@ extern "C" {
 }
 
 
-extern "C" {float64 data;}
+extern "C" {float64 data = -0.070;}
 
 int SAMPLE_RATE = 100000; //in Hz
 int LAST_READ = 0;
@@ -173,3 +173,11 @@ double step_clamp(double t, double I) {
         return data*SF_IN;
     }
 
+
+int run_step_loop(double *I, double *out){
+
+        for (int i = 0; i < sizeof(I)/sizeof(double); i++){
+                out[i] = step_clamp(i*0.0001, I[i]);
+        }
+        return 0;
+}
