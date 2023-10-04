@@ -10,7 +10,7 @@ faulthandler.enable(file=sys.stdout) #to debug seg faults and timeouts
 #get the path to the current file
 path = os.path.dirname(os.path.abspath(__file__))
 
-libc = cdll.LoadLibrary("/home/smestern/Dropbox/RTXI/ni_interface/lib.so")
+libc = cdll.LoadLibrary("/home/smestern/Dropbox/RTXI/ni_interface/interface_c.so")
 
 fun = libc.run_step_loop
 fun.restype = None
@@ -23,8 +23,8 @@ def loop_clamp(I):
     #create a pointer to the numpy output array
     size_ptr = ctypes.pointer(ctypes.c_size_t(size[0]-1))
     #call the function in the shared library
-    libc.run_step_loop(ctypes.pointer(I), ctypes.pointer(V_out), size_ptr)
-    return V_out
+    libc.run_step_loop(I, V_out, size_ptr)
+    return np.ctypeslib.as_array(V_out)
 
 
 def init_ni(dt, scalefactor_in=0.1, scalefactor_out=1/0.5):
@@ -45,3 +45,4 @@ if __name__=="__main__":
     #try writing zeros
     I = np.zeros((200))
     V_out = loop_clamp(I)
+    print(V_out)
