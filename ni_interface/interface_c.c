@@ -159,3 +159,11 @@ double step_clamp(double t, double I) {
         return data*SF_IN;
     }
 
+int run_step_loop(double *I, double *out, int size){
+        //loop over I and out and call step_clamp
+        for (int i = 0; i < size; i++){
+                out[i] = step_clamp(i, I[i]);
+        }
+        return 0;
+
+}
