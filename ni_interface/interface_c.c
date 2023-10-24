@@ -1,20 +1,16 @@
 #include <stdio.h>
-
-
-
 #include <NIDAQmx.h>
-
+#include <time.h>
+#include "interface_c.h"
 #define DAQmxErrChk(functionCall) if( DAQmxFailed(error=(functionCall)) ) goto Error; else;
 
-float64 data;
-
-int SAMPLE_RATE = 100000; //in Hz
+float64 data[1];
 int LAST_READ = 0;
-int32       error=0;
-TaskHandle  taskHandle=0;
+int32 error=0;
+TaskHandle taskHandle=0;
 TaskHandle taskHandleWrite=0;
-static int  totalRead=0;
-int32       read=0;
+int totalRead=0;
+int32 read[1];
 float64 point;
 float64 SF_IN;
 float64 SF_OUT;
@@ -24,14 +20,12 @@ double now = 0;
 double step_time_real;
 double step_time_net;
 double full_run_time = 0;
-
-
-
+double SAMPLE_RATE = 100000;
 
 int nidaqrec(void)
 {
     
-        char  errBuff[2048]={'\0'};
+        //char  errBuff[2048]={'\0'};
 
         // DAQmx analog voltage channel and timing parameters
 
@@ -69,24 +63,32 @@ int nidaqrec(void)
 
         Error:
         if( DAQmxFailed(error) )
-        DAQmxGetExtendedErrorInfo(errBuff,2048);
+        //DAQmxGetExtendedErrorInfo(errBuff,2048);
         if( taskHandle!=0 )  {
         //DAQmxStopTask(taskHandle);
         //DAQmxClearTask(taskHandle);
         }
         if( DAQmxFailed(error) )
-        printf("DAQmx Error: %s\n",errBuff);
+        //printf("DAQmx Error: %s\n",errBuff);
         return 50;
 }
 
 
 void read_sample(){
-        DAQmxReadAnalogF64(taskHandle,1,1.0e-4,DAQmx_Val_GroupByScanNumber,&data,1,&read,NULL);
-}
+        int32 newread[1];
+        int32 read_code;
+        //print the task handle
+        
+        //read the s
+        read_code = DAQmxReadAnalogF64(taskHandle,1,1,DAQmx_Val_GroupByChannel,data,1,newread,NULL);
+        
+} 
 
 void write_sample(float64 val){
-        val = val*SF_OUT;
-        DAQmxWriteAnalogF64(taskHandleWrite,1, 1, 1.0e-4, DAQmx_Val_GroupByScanNumber,&val,NULL,NULL);
+        float64 newval[1];
+        int32 write_code[1];
+        newval[0] = val*SF_OUT;
+        DAQmxWriteAnalogF64(taskHandleWrite,1, 1, 1, DAQmx_Val_GroupByChannel,newval,write_code,NULL);
 }
 
 void clean_up_ni(){
@@ -127,16 +129,20 @@ double step_clamp(double t, double I) {
         
         if (step_time_net <= 0.0){
                 //if for some reason the network time is negative, or zero, do nothing and return the last value
+                printf("step_time_net: %lf\n", step_time_net);
+                printf("t: %lf\n", t);
+                printf("LAST_NET_T: %lf\n", LAST_NET_T);
                 LAST_NET_T = t;
-                return data;
+                return data[0]*SF_IN;
 
         } else {
+                printf("step_time_net: %lf\n", step_time_net);
                 //read the sample from the NI card
-                read_sample();
+                read_sample(); 
                 //write the sample to the NI card
                 write_sample(I*1e9);
                 //check how much time has passed since last read
-                step_time_real = 0;//0std::chrono::duration_cast<std::chrono::duration<double>>(std::chrono::high_resolution_clock::now() - LAST_READ_T).count();
+                step_time_real = (double)time(NULL) - LAST_READ_T;
                 //time steps since last call of read
         }
         
@@ -146,20 +152,24 @@ double step_clamp(double t, double I) {
                 printf("Code running slower than real time with a delay of: %lf\n", -1*(step_time_net - step_time_real));
         } else {
                 //force wait to slow the network down to match code time
-                //std::this_thread::sleep_for(std::chrono::duration<double>((step_time_net - step_time_real))); //sleep for the difference in time in miliseconds
-                //printf("Network running faster than real time with a step diff of: %lf\n", (step_time_net - step_time_real));
+                //sleep for the difference in time in miliseconds
+                sleep((step_time_net - step_time_real));
+                printf("Network running faster than real time with a step diff of: %lf\n", (step_time_net - step_time_real));
 
         }
         LAST_NET_T = t;
-        LAST_READ_T = 0;//std::chrono::high_resolution_clock::now();
-        
-        return data*SF_IN;
+        LAST_READ_T = (double)time(NULL);
+        //printf("data[0]: %lf\n", data[0]);
+        return data[0]*SF_IN;
     }
 
 int run_step_loop(double *I, double *out, int size){
         //loop over I and out and call step_clamp
+        double dt = 1/SAMPLE_RATE;
+       
         for (int i = 0; i < size; i++){
-                out[i] = step_clamp(i, I[i]);
+                out[i] = step_clamp(i*dt, I[i]);
+                printf("out[%d]: %lf\n", i, out[i]);
         }
         return 0;
 

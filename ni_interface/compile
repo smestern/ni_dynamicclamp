@@ -1,0 +1,1 @@
+gcc -shared -g interface_c.c -o interface_c.so -lnidaqmx -fpic

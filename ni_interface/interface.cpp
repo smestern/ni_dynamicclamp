@@ -91,6 +91,7 @@ void read_sample(){
 
 void write_sample(float64 val){
         val = val*SF_OUT;
+        printf("%lf\n", val);
         DAQmxWriteAnalogF64(taskHandleWrite,1, 1, 1.0e-4, DAQmx_Val_GroupByScanNumber,&val,NULL,NULL);
 }
 
@@ -100,7 +101,7 @@ void clean_up_ni(){
         DAQmxClearTask(taskHandle);
         DAQmxStopTask(taskHandleWrite);
         DAQmxClearTask(taskHandleWrite);
-        DAQmxResetDevice("Dev1");
+        DAQmxResetDevice("Dev2");
 }
 
 

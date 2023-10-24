@@ -7,21 +7,27 @@ batch_size = 128
 data_path='./data/mnist'
 sys.path.append('/home/smestern/Dropbox/RTXI/ni_interface')
 import ni_generic as ni
-
+pA = 1e-12
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 import numpy as np
 import matplotlib.pyplot as plt
 import nidaqmx
+
+from snntorch import surrogate
+from snntorch import utils
+
+import snntorch.functional as SF
 # Network Architecture
 num_inputs = 28*28
 num_hidden = 100
 num_outputs = 10
 
 # Temporal Dynamics
-num_steps = int(0.25 * (1/0.001))
-beta = 0.95
+num_steps = int(0.25 * (1/0.0001)) 
+beta = 0.08 #membrane potential decay rate in seconds 
+alpha = 0.05 #synaptic decay rate in seconds
 
 
 # Define Network
@@ -31,7 +37,10 @@ class NiDAQ_NET(nn.Module):
 
         # Initialize layers
         self.fc1 = nn.Linear(num_inputs, num_hidden)
-        self.lif1 = snn.Synaptic(beta=beta, alpha=0.8, init_hidden=False, reset_mechanism='zero', learn_alpha=True, learn_beta=True)
+        self.beta_1 = nn.Parameter(torch.tensor(beta))
+        self.alpha_1 = nn.Parameter(torch.tensor(alpha))
+
+        self.lif1 = snn.Synaptic(beta=self.beta_1, alpha=self.alpha_1, init_hidden=False, reset_mechanism='zero', learn_alpha=True, learn_beta=True)
         self.lif2 = snn.Synaptic(beta=beta, alpha=0.8, reset_mechanism='zero')
         
         self.layers = [self.fc1, self.lif1, self.lif2]
@@ -62,7 +71,7 @@ class NiDAQ_NET(nn.Module):
                 spk2_rec.append(spk2)
                 mem2_rec.append(mem2)
 
-                #record the cur, syn1 and mem for the chosen unit
+                #record the cur, syn1 and mem for the chosen unit======================================
                 input_rec.append(cur1)
                 spikes_rec.append(spk1)
                 mem_rec.append(mem1)
@@ -81,7 +90,7 @@ class NiDAQ_NET(nn.Module):
             temp_cur = cur_daq[:, x, self.unit_idx]
             temp_spikes = spikes_daq[:, x, self.unit_idx]
             adq = self.write_daq(temp_spikes+temp_cur, num_steps)
-            out_mem.append(torch.tensor(adq))
+            out_mem.append(torch.tensor(adq, dtype=torch.float32, device=device))
 
         out_mem = torch.stack(out_mem, dim=1)
 
@@ -93,7 +102,11 @@ class NiDAQ_NET(nn.Module):
 
     def write_daq(self, input, samps):
         #write to DAQ
-        return ni.loop_clamp(input.detach().cpu().numpy())
+        v_out = ni.loop_clamp(input.detach().cpu().numpy()*pA * 20)*1000
+        #min max scale between -100mV and 100mV
+        v_out = np.clip(v_out, -100, 100)
+        v_out = (v_out - -70)/(100 - -70)
+        return v_out
 
 def print_batch_accuracy(data, targets, train=False):
     _, output,_ = net(data.view(batch_size, -1))
@@ -113,7 +126,7 @@ def train_printer():
     print("\n")
 
 
-daq = ni.init_ni(0.001, 0.1, 1/0.5)
+daq = ni.init_ni(0.1, 0.1, 1/0.05)
 
 loss = nn.CrossEntropyLoss()
 
@@ -131,18 +144,14 @@ mnist_test = datasets.MNIST(data_path, train=False, download=True, transform=tra
 train_loader = DataLoader(mnist_train, batch_size=batch_size, shuffle=True, drop_last=True)
 test_loader = DataLoader(mnist_test, batch_size=batch_size, shuffle=True)
 
-from snntorch import surrogate
-
 beta = 0.9  # neuron decay rate
 spike_grad = surrogate.fast_sigmoid()
 
 #  Initialize Network
 net = NiDAQ_NET(daq).to(device)
-from snntorch import utils
 
-import snntorch.functional as SF
 
-optimizer = torch.optim.Adam(net.parameters(), lr=2e-4, betas=(0.9, 0.999))
+optimizer = torch.optim.Adam(net.parameters(), lr=1e-2, betas=(0.9, 0.999))
 loss = SF.loss.ce_count_loss(population_code=True, num_classes=10)
 
 num_epochs = 5
@@ -190,7 +199,7 @@ for epoch in range(num_epochs):
             test_loss_hist.append(test_loss.item())
 
             # Print train/test loss/accuracy
-            if counter % 50 == 0:
+            if counter % 10 == 0:
                 train_printer()
                 plot_mem = test_mem[:, 0, :40].detach().cpu().numpy().T
                 plt.figure(figsize=(15, 5), num=0)
@@ -199,10 +208,13 @@ for epoch in range(num_epochs):
                     if neuron != 0:
                         continue
                     spike_times = np.where(test_spk[:, 0, neuron].detach().cpu().numpy() == 1)[0]
-                    plt.plot(plot_mem[neuron])
-                    plt.plot(net.out_mem[:,0])
+                    plt.plot(plot_mem[neuron], c='k')
+                    plt.plot(net.out_mem[:,0], c='r')
+                    plt.twinx()
+
                     if len(spike_times) > 0:
                         plt.scatter(spike_times, plot_mem[neuron, spike_times], s=2, c='r')
+
                     
                 plt.xlabel('Time Steps')
                 plt.ylabel('')
