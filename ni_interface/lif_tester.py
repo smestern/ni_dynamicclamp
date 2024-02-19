@@ -12,7 +12,7 @@ def binarize_spikes(spike_times, dt=1e-4, duration=1):
     return spikes
 
 
-def lif_model(I, dt=1e-4):
+def lif_model(I, dt=1e-5):
     #simple LIFF neuron model
     #I is the input current in pA
     #dt is the timestep in seconds

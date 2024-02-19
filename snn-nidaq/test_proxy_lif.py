@@ -30,10 +30,10 @@ class proxy_net(nn.Module):
         super().__init__()
         self.beta_1 = nn.Parameter(torch.tensor(beta))
         self.alpha_1 = nn.Parameter(torch.tensor(alpha))
-        self.threshold = nn.Parameter(torch.tensor(0.5))
+        self.threshold = nn.Parameter(torch.tensor(0.8))
         self.scale_fator = nn.Parameter(torch.tensor(1.0))
-        self.lif1 = snn.Synaptic(beta=self.beta_1, alpha=self.alpha_1, init_hidden=False,  learn_alpha=True, learn_beta=True, learn_threshold=True, 
-                                 threshold=self.threshold)
+        self.lif1 = utils.sLIFin(0.1, 30, -50, 0.0002, 0.1, 0.1, -20)#snn.Synaptic(beta=self.beta_1, alpha=self.alpha_1, init_hidden=False,  learn_alpha=True, learn_beta=True, learn_threshold=False, 
+                        #         threshold=self.threshold)
         self.tanh = nn.Tanh()
         
     def _forward(self, x):
@@ -45,7 +45,7 @@ class proxy_net(nn.Module):
         mem_rec = []
         for step in range(num_steps):
                 cur1 = x[:, step] 
-                spk1, syn1, mem1 = self.lif1(cur1 * self.scale_fator, syn1, mem1)
+                spk1, syn1, mem1 = self.lif1(cur1 * self.scale_fator, torch.tensor(0), syn1, mem1)
                 mem1 = self.tanh(mem1)
                 #record the cur, syn1 and mem for the chosen unit======================================
                 input_rec.append(cur1)
@@ -82,22 +82,23 @@ class proxy_net(nn.Module):
 # Define Network
 network = proxy_net()
 
-# Initialize input
-input = torch.randn(batch_size, num_steps, device=device)
-#at time step 100, set the input to 1
-input[:, 200:-200] += 0.25
+
 # Define Loss
 error = nn.MSELoss()
-error2 = utils.EMD(dt=dt, duration=1, bin_size=0.05)
+error2 = utils.EMD(dt=dt, duration=0.25, bin_size=0.002)
 
 # Define Optimizer
-learning_rate = 1e-2
+learning_rate = 5e-2
 momentum = 0.9
 optimizer = torch.optim.Adam(network.parameters(), lr=learning_rate)
-lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=25, T_mult=2, eta_min=1e-5)
+lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=1000, eta_min=1e-9)
 loss_hist = []
 for _ in range(600):
     # Forward pass
+    # Initialize input
+    input = torch.randn(batch_size, num_steps, device=device)
+    #at time step 100, set the input to 1
+    input[:, 200:-200] += 0.25
     output, _output_proxy, spk, spk_proxy = network(input)
     #loss is between the output and the proxy
     loss = error(output, _output_proxy)
@@ -108,7 +109,8 @@ for _ in range(600):
     optimizer.zero_grad()
     loss.backward()
     optimizer.step()
-    lr_scheduler.step()
+    if loss < 5.0:
+        lr_scheduler.step()
     print(loss)
     #plot the output and the proxy
     plt.figure(num=1)
