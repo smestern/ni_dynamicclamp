@@ -27,7 +27,7 @@ def init_neuron_device(device, dt=defaultclock.dt, scalefactor_in=0.1, scalefact
     prefs.codegen.cpp.headers = ['"interface.h"', '"NIDAQmx.h"']
 
     #here we call our function to intialize the NIDAQ and start the recording
-    device.insert_code('after_start', f'init_ni({defaultclock.dt/ms}, {scalefactor_in}, {scalefactor_out});') #we want to make sure that the sampling rate is the same as the defaultclock.dt
+    device.insert_code('after_start', f'init_ni({dt/ms}, {scalefactor_in}, {scalefactor_out});') #we want to make sure that the sampling rate is the same as the defaultclock.dt
 
     device.insert_code('before_end', 'clean_up();') #clean up the NIDAQ, log the time
     return device

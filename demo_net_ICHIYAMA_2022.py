@@ -96,7 +96,7 @@ GABA.refrac = 1*ms
 CRH.refrac = (1 + np.abs(np.random.normal(loc=1.5, scale=1, size=500))) *ms
 
 if DYN_CLAMP:
-       neuron = P2
+       neuron = P2[:1]
        neuron.run_regularly(f'v =  step_clamp(t, d_I*int(t/second>3))', dt=defaultclock.dt)
        neuron.Vcut = 0*mV
 
