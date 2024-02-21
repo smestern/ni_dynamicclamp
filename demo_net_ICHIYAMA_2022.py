@@ -158,7 +158,7 @@ subplot(211)
 plot(Mv.t/ms, Mv.v[0]/mV, label='v', c='k', alpha=0.5)
 spike_dict = M_crossings.spike_trains()
 scatter(spike_dict[0]/ms, np.full(len(spike_dict[0]), 10), c='r', marker='x')
-twinx()
+twinx(); 
 plot(Mv.t/ms, Mv.d_I[0]/pA, label='v2', c='r', alpha=0.5)
 subplot(212)
 #plot the gaba responders

@@ -18,10 +18,10 @@ extern "C" {float64 data = -0.070;}
 // needs -lrt (real-time lib)
 // 1970-01-01 epoch UTC time, 1 mcs resolution (divide by 1M to get time_t)
 struct timespec ts;
-long double ClockGetTime()
+uint32_t ClockGetTime()
 {
     clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
-    return (long double)(ts.tv_sec * 1000000LL + ts.tv_nsec / 1000LL) / 1e6; // in seconds
+    return (uint32_t)ts.tv_sec * 1000000LL + (uint32_t)ts.tv_nsec / 1000LL; // in microseconds
 }
 # define tscmp(a, b, CMP)                             \
   (((a)->tv_sec == (b)->tv_sec) ?                         \
@@ -74,7 +74,7 @@ int busySleep( uint32_t nanoseconds )
 
 int SAMPLE_RATE = 100000; //in Hz
 int LAST_READ = 0; //last 
-const long double TOLERANCE = 1e-9; //in seconds, the tolerance for the time difference between the network time and the code time
+uint32_t TOLERANCE = 1; 
 int32       error=0;
 TaskHandle  taskHandle=0;
 TaskHandle taskHandleWrite=0;
@@ -83,14 +83,15 @@ int32       read_ni=0;
 float64 point;
 float64 SF_IN;
 float64 SF_OUT;
-long double LAST_READ_T = ClockGetTime();
-long double new_read_T = 0;
-long double now = ClockGetTime();
-long double full_run_time = ClockGetTime();
-long double step_time_real;
-long double step_time_net;
+uint32_t LAST_READ_T = ClockGetTime();
+uint32_t new_read_T = 0;
+uint32_t now = ClockGetTime();
+uint32_t full_run_time = ClockGetTime();
+uint32_t step_time_real;
+uint32_t step_time_net;
+uint32_t total_debt = 0;
+uint32_t DT_micro = 0;
 long double LAST_NET_T = 0;
-long double total_debt = 0;
 
 
 
@@ -172,7 +173,7 @@ void clean_up_ni(){
 }
 
 double clean_up(){
-        printf("Run time: %Lf with total delay debt of: %Lf\n", (LAST_READ_T - full_run_time), total_debt);
+        printf("Run time: %Lf with total delay debt of: %Lf\n", (long double)(LAST_READ_T - full_run_time)/1e6, (long double)(total_debt/1e6));
         clean_up_ni();  //clean up NI
         return 0.0;
 }
@@ -191,12 +192,19 @@ int set_thread_priority_max(){
         return 0;
 }
 
+uint32_t cast_net_to_int(double net_time){
+        
+        return (uint32_t)(net_time*1e6); //convert to microseconds
+}
 
 
 int init_ni(float64 net_clock_dt, float64 scalein, float64 scaleout){
+        //net_clock_dt in milliseconds 
         //set the sample rate to the network clock rate
         set_thread_priority_max();
         SAMPLE_RATE = 1/(net_clock_dt/1000);
+        //the DT in microseconds
+        DT_micro = (uint32_t)(net_clock_dt*1e3);
         //set the scale factors
         SF_IN = scalein;
         SF_OUT = scaleout;
@@ -208,29 +216,28 @@ int init_ni(float64 net_clock_dt, float64 scalein, float64 scaleout){
 
 double step_clamp(double t, double I) {
         // t in seconds , I in pA
-
-        step_time_net = (t - LAST_NET_T); //time steps in neural network time, in seconds
-        if (step_time_net <= 0.0){
+        step_time_net = DT_micro;
+        if (t <= 0.0){
                 //if for some reason the network time is negative, or zero, do nothing and return the last value
-                LAST_NET_T = t;
                 full_run_time = ClockGetTime();; //reset the full run time
                 LAST_READ_T = ClockGetTime(); //reset the last read time
+                printf("Network time is negative or zero, returning last value\n");
                 return data;
 
         } else {
                 //read the sample from the NI card
                 read_sample();
-
+                new_read_T = ClockGetTime();
                 //write the sample to the NI card
                 //check how much time has passed since last read
-                step_time_real = ClockGetTime() - LAST_READ_T; //time steps since last call of read, also in seconds
+                step_time_real = new_read_T - LAST_READ_T; //time steps since last call of read, also in seconds
                 
                 //time steps since last call of read
         }
-        
+        //printf("Network time is: %d\n", step_time_net);
         //check if the network time is ahead of the code time, if so, wait, otherwise proceed
         if (step_time_net < step_time_real) { //if neural network time is ahead of code time, wait, otherwise proceed
-                //printf("Code running slower than real time with a delay of: %lf\n with a network step of : %lf\n and a real time of: %lf", 1000*(step_time_real-step_time_net), 1000*(step_time_net), 1000*(step_time_net));
+                //printf("Code running slower than real time with a delay of: %d with a network step of :  %d  with a network step of : %d\n and a real time of: %d",1000*(step_time_net - step_time_real), DT_micro, step_time_real);
                 //dont write just read and return
                 total_debt += (step_time_real - step_time_net);
         } else {
@@ -239,15 +246,23 @@ double step_clamp(double t, double I) {
                 write_sample(I*1e9); //write the current to the NI card
                 //force wait to slow the network down to match code time
                 //these funcions seem to be inaccurate, so we will use a busy wait instead, 
+
+                //printf("Network running faster than real time with a step diff of:  %d   with a network step of : %d  and a real time of: %d\n",(step_time_net - step_time_real), DT_micro, step_time_real);
                 //stealing idea from https://github.com/CompEphys-team/stdpc/blob/17fa31b760e5f9210e22c84b2a702ce182971be4/src/drivers/Clock.cpp#L68
-                while ((step_time_net - step_time_real)>TOLERANCE){ //busy wait until the network time is behind the code time
-                        step_time_real = (ClockGetTime() - LAST_READ_T);
+                while ((step_time_net - step_time_real)>=TOLERANCE){ //busy wait until the network time is behind the code time
+                        new_read_T = ClockGetTime();
+                        step_time_real = (new_read_T  - LAST_READ_T);
+                        if (step_time_real >= step_time_net){
+                                break;
+                        }
+                        
+                        //printf("Network running faster than real time with a step diff of:  %d   with a network step of : %d  and a real time of: %d\n",(step_time_net - step_time_real), DT_micro, step_time_real);
+                        
                 }
-                //printf("Network running faster than real time with a step diff of: %Lf\n with a network step of : %Lf\n and a real time of: %Lf", 1000*(step_time_net - step_time_real), 1000*(step_time_real), 1000*(step_time_net));
+                //printf("Network running faster than real time with a step diff of:  %d   with a network step of : %d  and a real time of: %d\n",(step_time_net - step_time_real), DT_micro, step_time_real);
                 
         }
-        LAST_NET_T = t;
-        LAST_READ_T = step_time_real + LAST_READ_T;
+        LAST_READ_T = new_read_T; //update the last read time
         
         return data*SF_IN;
 }
