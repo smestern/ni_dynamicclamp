@@ -12,6 +12,17 @@ extern "C" {
 
 extern "C" {float64 data = -0.070;}
 
+#include <time.h>
+#include <sys/timeb.h>
+// needs -lrt (real-time lib)
+// 1970-01-01 epoch UTC time, 1 mcs resolution (divide by 1M to get time_t)
+double ClockGetTime()
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    return (double)(ts.tv_sec * 1000000LL + (uint64_t)ts.tv_nsec / 1000LL) / 1e6; // in seconds
+}
+
 int SAMPLE_RATE = 100000; //in Hz
 int LAST_READ = 0; //last 
 const int TOLERANCE = 1e-9; //in seconds, the tolerance for the time difference between the network time and the code time
@@ -23,12 +34,12 @@ int32       read=0;
 float64 point;
 float64 SF_IN;
 float64 SF_OUT;
-auto LAST_READ_T = std::chrono::high_resolution_clock::now();
+auto LAST_READ_T = ClockGetTime();
 double LAST_NET_T = 0;
-auto now = std::chrono::high_resolution_clock::now();
+auto now = ClockGetTime();
 double step_time_real;
 double step_time_net;
-auto full_run_time = std::chrono::high_resolution_clock::now();
+auto full_run_time = ClockGetTime();
 
 
 extern "C" {
@@ -87,12 +98,12 @@ int nidaqrec(void)
 
 
 void read_sample(){
-        DAQmxReadAnalogF64(taskHandle,1,1.0e-4,DAQmx_Val_GroupByScanNumber,&data,1,&read,NULL);
+        DAQmxReadAnalogF64(taskHandle,1,1.0e-6,DAQmx_Val_GroupByScanNumber,&data,1,&read,NULL);
 }
 
 void write_sample(float64 val){
         val = val*SF_OUT;
-        DAQmxWriteAnalogF64(taskHandleWrite,1, 1, 1.0e-4, DAQmx_Val_GroupByScanNumber,&val,NULL,NULL);
+        DAQmxWriteAnalogF64(taskHandleWrite,1, 1, 1.0e-6, DAQmx_Val_GroupByScanNumber,&val,NULL,NULL);
 }
 
 void clean_up_ni(){
@@ -109,7 +120,7 @@ void clean_up_ni(){
 }
 
 double clean_up(){
-        printf("%lf/n", std::chrono::duration_cast<std::chrono::duration<double>>(std::chrono::high_resolution_clock::now() - full_run_time).count());
+        printf("%lf/n", (LAST_READ_T - full_run_time));
         clean_up_ni();  //clean up NI
         return 0.0;
 }
@@ -118,8 +129,10 @@ int set_thread_priority_max(){
         int policy;
         struct sched_param param;
         pthread_attr_t attr;
+        int ret;
 
-        pthread_attr_setschedpolicy(&attr, SCHED_FIFO);
+        ret = pthread_attr_setschedpolicy(&attr, SCHED_FIFO);
+        printf("ret: %d\n", ret);
         pthread_getschedparam(pthread_self(), &policy, &param);
         param.sched_priority = sched_get_priority_max(SCHED_FIFO); //set to RT priority
         pthread_setschedparam(pthread_self(), policy, &param);
@@ -148,7 +161,8 @@ double step_clamp(double t, double I) {
         if (step_time_net <= 0.0){
                 //if for some reason the network time is negative, or zero, do nothing and return the last value
                 LAST_NET_T = t;
-                full_run_time = std::chrono::high_resolution_clock::now(); //reset the full run time
+                full_run_time = ClockGetTime();; //reset the full run time
+                LAST_READ_T = ClockGetTime(); //reset the last read time
                 return data;
 
         } else {
@@ -156,31 +170,32 @@ double step_clamp(double t, double I) {
                 read_sample();
                 //write the sample to the NI card
                 //check how much time has passed since last read
-                step_time_real = std::chrono::duration_cast<std::chrono::duration<double>>(std::chrono::high_resolution_clock::now() - LAST_READ_T).count(); //time steps since last call of read, also in seconds
+                step_time_real = ClockGetTime() - LAST_READ_T; //time steps since last call of read, also in seconds
                 
                 //time steps since last call of read
         }
         
         //check if the network time is ahead of the code time, if so, wait, otherwise proceed
         if (step_time_net < step_time_real) { //if neural network time is ahead of code time, wait, otherwise proceed
-                printf("Code running slower than real time with a delay of: %lf\n", 1000*(step_time_real));
+                printf("Code running slower than real time with a delay of: %lf\n with a network step of : %lf\n and a real time of: %lf", 1000*(step_time_real-step_time_net), 1000*(step_time_net), 1000*(step_time_net));
                 //dont write just read and return
         } else {
                 
-                printf("Network running faster than real time with a step diff of: %lf\n", 1000*(step_time_net - step_time_real));
+                //printf("Network running faster than real time with a step diff of: %lf\n with a network step of : %lf\n and a real time of: %lf", 1000*(step_time_net - step_time_real), 1000*(step_time_real), 1000*(step_time_net));
                 write_sample(I*1e9); //write the current to the NI card
                 //force wait to slow the network down to match code time
                 //these funcions seem to be inaccurate, so we will use a busy wait instead, 
                 //stealing idea from https://github.com/CompEphys-team/stdpc/blob/17fa31b760e5f9210e22c84b2a702ce182971be4/src/drivers/Clock.cpp#L68
-                while ((step_time_net - step_time_real)>4e-8){ //busy wait until the network time is behind the code time
-                        step_time_real = std::chrono::duration_cast<std::chrono::duration<double>>(std::chrono::high_resolution_clock::now() - LAST_READ_T).count(); //time steps since last call of read, also in seconds
-                        //printf("Network running faster than real time with a step diff of: %lf\n", 1000*(step_time_net - step_time_real));
+                while ((step_time_net - step_time_real)>TOLERANCE){ //busy wait until the network time is behind the code time
+                        //step_time_real = std::chrono::duration_cast<std::chrono::duration<double>>(std::chrono::high_resolution_clock::now() - LAST_READ_T).count(); //time steps since last call of read, also in seconds
+                        step_time_real = ClockGetTime() - LAST_READ_T;
+                        //printf("Network running faster than real time with a step diff of: %lf\n with a network step of : %lf\n and a real time of: %lf", 1000*(step_time_net - step_time_real), 1000*(step_time_real), 1000*(step_time_net));;
                 }
-                printf("Network running faster than real time with a step diff of: %lf\n", 1000*(step_time_net - step_time_real));
+                //printf("Network running faster than real time with a step diff of: %lf\n with a network step of : %lf\n and a real time of: %lf", 1000*(step_time_net - step_time_real), 1000*(step_time_real), 1000*(step_time_net));
 
         }
         LAST_NET_T = t;
-        LAST_READ_T = std::chrono::high_resolution_clock::now();
+        LAST_READ_T = ClockGetTime();
         
         return data*SF_IN;
 }
