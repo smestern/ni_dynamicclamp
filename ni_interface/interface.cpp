@@ -20,9 +20,57 @@ extern "C" {float64 data = -0.070;}
 struct timespec ts;
 long double ClockGetTime()
 {
-    clock_gettime(CLOCK_REALTIME, &ts);
+    clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
     return (long double)(ts.tv_sec * 1000000LL + ts.tv_nsec / 1000LL) / 1e6; // in seconds
 }
+# define tscmp(a, b, CMP)                             \
+  (((a)->tv_sec == (b)->tv_sec) ?                         \
+   ((a)->tv_nsec CMP (b)->tv_nsec) :                          \
+   ((a)->tv_sec CMP (b)->tv_sec))
+# define tsadd(a, b, result)                              \
+  do {                                        \
+    (result)->tv_sec = (a)->tv_sec + (b)->tv_sec;                 \
+    (result)->tv_nsec = (a)->tv_nsec + (b)->tv_nsec;                  \
+    if ((result)->tv_nsec >= 1000000000)                          \
+      {                                       \
+    ++(result)->tv_sec;                           \
+    (result)->tv_nsec -= 1000000000;                          \
+      }                                       \
+  } while (0)
+# define tssub(a, b, result)                              \
+  do {                                        \
+    (result)->tv_sec = (a)->tv_sec - (b)->tv_sec;                 \
+    (result)->tv_nsec = (a)->tv_nsec - (b)->tv_nsec;                  \
+    if ((result)->tv_nsec < 0) {                          \
+      --(result)->tv_sec;                             \
+      (result)->tv_nsec += 1000000000;                        \
+    }                                         \
+  } while (0)
+
+int busySleep( uint32_t nanoseconds )
+{
+    struct timespec now;
+    struct timespec then;
+    struct timespec start;
+    struct timespec sleep;
+    if ( nanoseconds > 999999999 )
+    {
+        return 1;
+    }
+    clock_gettime( CLOCK_MONOTONIC_RAW, &start);
+    now = start;
+    sleep.tv_sec = 0;
+    sleep.tv_nsec = nanoseconds;
+    tsadd( &start, &sleep, &then );
+    while ( tscmp( &now, &then, < )  )
+    {
+        clock_gettime( CLOCK_MONOTONIC_RAW, &now);
+    }
+    return 0;
+}
+
+
+
 
 int SAMPLE_RATE = 100000; //in Hz
 int LAST_READ = 0; //last 
@@ -31,16 +79,18 @@ int32       error=0;
 TaskHandle  taskHandle=0;
 TaskHandle taskHandleWrite=0;
 static int  totalRead=0;
-int32       read=0;
+int32       read_ni=0;
 float64 point;
 float64 SF_IN;
 float64 SF_OUT;
 long double LAST_READ_T = ClockGetTime();
+long double new_read_T = 0;
 long double now = ClockGetTime();
 long double full_run_time = ClockGetTime();
 long double step_time_real;
 long double step_time_net;
 long double LAST_NET_T = 0;
+long double total_debt = 0;
 
 
 
@@ -100,7 +150,7 @@ int nidaqrec(void)
 
 
 void read_sample(){
-        DAQmxReadAnalogF64(taskHandle,1,1.0e-6,DAQmx_Val_GroupByScanNumber,&data,1,&read,NULL);
+        DAQmxReadAnalogF64(taskHandle,1,1.0e-6,DAQmx_Val_GroupByScanNumber,&data,1,&read_ni,NULL);
 }
 
 void write_sample(float64 val){
@@ -122,7 +172,7 @@ void clean_up_ni(){
 }
 
 double clean_up(){
-        printf("%Lf/n", (LAST_READ_T - full_run_time));
+        printf("Run time: %Lf with total delay debt of: %Lf\n", (LAST_READ_T - full_run_time), total_debt);
         clean_up_ni();  //clean up NI
         return 0.0;
 }
@@ -170,6 +220,7 @@ double step_clamp(double t, double I) {
         } else {
                 //read the sample from the NI card
                 read_sample();
+
                 //write the sample to the NI card
                 //check how much time has passed since last read
                 step_time_real = ClockGetTime() - LAST_READ_T; //time steps since last call of read, also in seconds
@@ -181,9 +232,10 @@ double step_clamp(double t, double I) {
         if (step_time_net < step_time_real) { //if neural network time is ahead of code time, wait, otherwise proceed
                 //printf("Code running slower than real time with a delay of: %lf\n with a network step of : %lf\n and a real time of: %lf", 1000*(step_time_real-step_time_net), 1000*(step_time_net), 1000*(step_time_net));
                 //dont write just read and return
+                total_debt += (step_time_real - step_time_net);
         } else {
                 
-                //printf("Network running faster than real time with a step diff of: %Lf\n with a network step of : %Lf\n and a real time of: %Lf", 1000*(step_time_net - step_time_real), 1000*(step_time_real), 1000*(step_time_net));
+                
                 write_sample(I*1e9); //write the current to the NI card
                 //force wait to slow the network down to match code time
                 //these funcions seem to be inaccurate, so we will use a busy wait instead, 
@@ -195,7 +247,7 @@ double step_clamp(double t, double I) {
                 
         }
         LAST_NET_T = t;
-        LAST_READ_T = ClockGetTime();
+        LAST_READ_T = step_time_real + LAST_READ_T;
         
         return data*SF_IN;
 }
