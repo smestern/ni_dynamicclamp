@@ -20,7 +20,7 @@ extern "C" {float64 data = -0.070;}
 struct timespec ts;
 long double ClockGetTime()
 {
-    clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
+    clock_gettime(CLOCK_MONOTONIC, &ts);
     return (long double)(ts.tv_sec * 1000000LL + ts.tv_nsec / 1000LL) / 1e6; // in seconds
 }
 # define tscmp(a, b, CMP)                             \
@@ -91,7 +91,8 @@ long double step_time_real;
 long double step_time_net;
 long double LAST_NET_T = 0;
 long double total_debt = 0;
-
+long int steps_taken = 0;
+long double total_rate = 0;
 
 
 extern "C" {
@@ -172,6 +173,10 @@ void clean_up_ni(){
 }
 
 double clean_up(){
+        long double rate = (total_rate/(long double)steps_taken) * 1000.0; //in ms
+        
+
+        printf("Average clamp rate: %Lf ms\n", rate);
         printf("Run time: %Lf with total delay debt of: %Lf\n", (LAST_READ_T - full_run_time), total_debt);
         clean_up_ni();  //clean up NI
         return 0.0;
@@ -248,7 +253,8 @@ double step_clamp(double t, double I) {
         }
         LAST_NET_T = t;
         LAST_READ_T = step_time_real + LAST_READ_T;
-        
+        steps_taken++;
+        total_rate+=step_time_real;
         return data*SF_IN;
 }
 
