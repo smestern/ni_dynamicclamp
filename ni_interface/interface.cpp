@@ -3,6 +3,11 @@
 #include <thread>
 #include <pthread.h>
 
+#include <time.h>
+#include <sys/timeb.h>
+// needs -lrt (real-time lib)
+// 1970-01-01 epoch UTC time, 1 mcs resolution (divide by 1M to get time_t)
+struct timespec ts;
 
 extern "C" { 
 #include <NIDAQmx.h>
@@ -13,60 +18,10 @@ extern "C" {
 
 extern "C" {float64 data = -0.070;}
 
-#include <time.h>
-#include <sys/timeb.h>
-// needs -lrt (real-time lib)
-// 1970-01-01 epoch UTC time, 1 mcs resolution (divide by 1M to get time_t)
-struct timespec ts;
-uint32_t ClockGetTime()
+long long ClockGetTime()
 {
     clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
-    return (uint32_t)ts.tv_sec * 1000000LL + (uint32_t)ts.tv_nsec / 1000LL; // in microseconds
-}
-# define tscmp(a, b, CMP)                             \
-  (((a)->tv_sec == (b)->tv_sec) ?                         \
-   ((a)->tv_nsec CMP (b)->tv_nsec) :                          \
-   ((a)->tv_sec CMP (b)->tv_sec))
-# define tsadd(a, b, result)                              \
-  do {                                        \
-    (result)->tv_sec = (a)->tv_sec + (b)->tv_sec;                 \
-    (result)->tv_nsec = (a)->tv_nsec + (b)->tv_nsec;                  \
-    if ((result)->tv_nsec >= 1000000000)                          \
-      {                                       \
-    ++(result)->tv_sec;                           \
-    (result)->tv_nsec -= 1000000000;                          \
-      }                                       \
-  } while (0)
-# define tssub(a, b, result)                              \
-  do {                                        \
-    (result)->tv_sec = (a)->tv_sec - (b)->tv_sec;                 \
-    (result)->tv_nsec = (a)->tv_nsec - (b)->tv_nsec;                  \
-    if ((result)->tv_nsec < 0) {                          \
-      --(result)->tv_sec;                             \
-      (result)->tv_nsec += 1000000000;                        \
-    }                                         \
-  } while (0)
-
-int busySleep( uint32_t nanoseconds )
-{
-    struct timespec now;
-    struct timespec then;
-    struct timespec start;
-    struct timespec sleep;
-    if ( nanoseconds > 999999999 )
-    {
-        return 1;
-    }
-    clock_gettime( CLOCK_MONOTONIC_RAW, &start);
-    now = start;
-    sleep.tv_sec = 0;
-    sleep.tv_nsec = nanoseconds;
-    tsadd( &start, &sleep, &then );
-    while ( tscmp( &now, &then, < )  )
-    {
-        clock_gettime( CLOCK_MONOTONIC_RAW, &now);
-    }
-    return 0;
+    return ((ts.tv_sec * 1000000000ll) + ts.tv_nsec); // in nanoseconds
 }
 
 
@@ -74,23 +29,23 @@ int busySleep( uint32_t nanoseconds )
 
 int SAMPLE_RATE = 100000; //in Hz
 int LAST_READ = 0; //last 
-uint32_t TOLERANCE = 1; 
+long long TOLERANCE = 0; 
 int32       error=0;
 TaskHandle  taskHandle=0;
-TaskHandle taskHandleWrite=0;
+TaskHandle taskHandleWrite=0;   
 static int  totalRead=0;
 int32       read_ni=0;
 float64 point;
 float64 SF_IN;
 float64 SF_OUT;
-uint32_t LAST_READ_T = ClockGetTime();
-uint32_t new_read_T = 0;
-uint32_t now = ClockGetTime();
-uint32_t full_run_time = ClockGetTime();
-uint32_t step_time_real;
-uint32_t step_time_net;
-uint32_t total_debt = 0;
-uint32_t DT_micro = 0;
+long long LAST_READ_T = ClockGetTime();
+long long new_read_T = 0;
+long long now = ClockGetTime();
+long long full_run_time = 0;
+long long step_time_real;
+long long step_time_net;
+long long total_debt = 0;
+long long DT_micro = 0;
 long double LAST_NET_T = 0;
 
 
@@ -173,7 +128,7 @@ void clean_up_ni(){
 }
 
 double clean_up(){
-        printf("Run time: %Lf with total delay debt of: %Lf\n", (long double)(LAST_READ_T - full_run_time)/1e6, (long double)(total_debt/1e6));
+        printf("Run time: %lld with total delay debt of: %lld \n", ((LAST_READ_T - full_run_time)), (total_debt));
         clean_up_ni();  //clean up NI
         return 0.0;
 }
@@ -192,9 +147,9 @@ int set_thread_priority_max(){
         return 0;
 }
 
-uint32_t cast_net_to_int(double net_time){
+long long cast_net_to_int(double net_time){
         
-        return (uint32_t)(net_time*1e6); //convert to microseconds
+        return (long long)(net_time*1e6); //convert to microseconds
 }
 
 
@@ -203,8 +158,8 @@ int init_ni(float64 net_clock_dt, float64 scalein, float64 scaleout){
         //set the sample rate to the network clock rate
         set_thread_priority_max();
         SAMPLE_RATE = 1/(net_clock_dt/1000);
-        //the DT in microseconds
-        DT_micro = (uint32_t)(net_clock_dt*1e3);
+        //the DT in nanoseconds
+        DT_micro = (long long)(net_clock_dt*1e6); 
         //set the scale factors
         SF_IN = scalein;
         SF_OUT = scaleout;
@@ -237,7 +192,7 @@ double step_clamp(double t, double I) {
         //printf("Network time is: %d\n", step_time_net);
         //check if the network time is ahead of the code time, if so, wait, otherwise proceed
         if (step_time_net < step_time_real) { //if neural network time is ahead of code time, wait, otherwise proceed
-                //printf("Code running slower than real time with a delay of: %d with a network step of :  %d  with a network step of : %d\n and a real time of: %d",1000*(step_time_net - step_time_real), DT_micro, step_time_real);
+                //printf("Code running slower than real time with a delay of:%lld   with a network step of : %lld  and a real time of: %lld\n",(step_time_net - step_time_real), DT_micro, step_time_real);
                 //dont write just read and return
                 total_debt += (step_time_real - step_time_net);
         } else {
