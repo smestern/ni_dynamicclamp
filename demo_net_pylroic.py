@@ -61,7 +61,7 @@ k_1 = 1/ms
 ### Neuronal equations
 eqs = '''
 # somatic compartment
-dV_s/dt = (-I_syn - I_L - I_Ca - I_K - I_A - I_proc - g_E*(V_s - V_a))/C_s : volt
+dV_s/dt = (-I_syn - I_L - I_Ca - I_K - I_A - I_proc - g_E*(V_s - V_a))/C_s * neur_dyn: volt
 I_total = clip(I_syn, -150*pA, 150*pA) : amp
 I_L = g_Ls*(V_s - E_L) : amp
 I_K = g_K*m_K**4*(V_s - E_K) : amp
@@ -119,6 +119,8 @@ I_target : amp (constant)
 
 # neuron class
 label : integer (constant)
+# neuron dynamics
+neur_dyn : 1 (constant)
 '''
 ABPD, LP, PY = 0, 1, 2
 
@@ -144,9 +146,11 @@ circuit.m_proc = 'm_proc_inf'
 circuit.m_Na = 'm_Na_inf'
 circuit.h_Na = 'h_Na_inf'
 circuit.m_Kd = 'm_Kd_inf'
+circuit.neur_dyn = 1
 
-circuit[1].run_regularly(f'V_s = -70*mV')
-#dyn_clamp_neuron = attach_neuron(circuit, 1, 'V_s', 'I_total', dt=0.1*ms)
+#circuit[1].run_regularly(f'V_s = -70*mV')
+dyn_clamp_neuron,_ = attach_neuron(circuit, 0, 'V_s', 'I_total', dt=0.1*ms)
+dyn_clamp_neuron.neur_dyn = 0
 # %% [markdown]
 # The definition of the synapses and the simulation protocol are identical to the simplified model:
 
@@ -188,7 +192,7 @@ M.active = False
 run(adapt_time, report='text')
 M.active = True
 run(observe_time, report='text')
-#device = init_neuron_device(device, dt=0.1*ms, scalefactor_out=2.5)
+device = init_neuron_device(device, dt=0.1*ms, scalefactor_out=2.5)
 device.build(directory='example_1_complex')
 
 # %% [markdown]

@@ -10,13 +10,12 @@ from brian2 import *
 from scipy.io import savemat, loadmat
 from ni_interface.ni_brian2 import *
 seed(4323)
-defaultclock.dt = 0.1*ms
-set_device('cpp_standalone', build_on_run=True)
+set_device('cpp_standalone', build_on_run=False)
 N=10000
 K=100
 
 T=10.0*second
-dt=0.05*ms
+dt=0.1*ms
 
 we = 3.3276023360e-9*siemens
 wi = 8e-8*siemens
@@ -44,11 +43,12 @@ gi_sigma = 5.80938e-08*siemens
 
 # Membrane Equation
 eqs = Equations('''
-dv/dt = ( gL*(EL-v) + ge*(Ee-v) + gi*(Ei-v) ) * (1./Cm) : volt (unless refractory)
+dv/dt = ( gL*(EL-v) + ge*(Ee-v) + gi*(Ei-v) ) * (1./Cm) * neur_dyn : volt (unless refractory)
 d_I = clip(( ge*(Ee-v) + gi*(Ei-v)), -250*pA, 250*pA) : amp
 dge/dt = -ge*(1./taue) : siemens
 dgi/dt = -gi*(1./taui) : siemens
 vth : volt
+neur_dyn : 1
 ''')
 
 # Set up the network
@@ -57,9 +57,11 @@ Ne = int(N*8/10)
 Ni = N-Ne
 Pe = P[:Ne]
 Pi = P[Ne:]
-neuron = P[:1]
+P.neur_dyn = 1
+
 P.vth = vth
-neuron.run_regularly(f'v = step_clamp(t, d_I)', dt=defaultclock.dt)
+neuron, _ = attach_neuron(P, 0, i_mem_var="d_I")
+neuron.neur_dyn = 0
 neuron.vth = -0*mV
 taudel = 300e-6*second
 
@@ -84,13 +86,20 @@ P.gi = np.random.normal( gi_mean, gi_sigma, len(P) ) * siemens
 M = SpikeMonitor(P)
 Mv = StateMonitor(P, 'v', record=[0])
 Mr = PopulationRateMonitor(P)
-device = init_neuron_device(device=device, scalefactor_out=2.5)
+device = init_neuron_device(device=device, scalefactor_out=2.5, runtime=T/second)
 # Run simulation
-run( T, report='stdout' )
+run( T, report='stdout')
 
+device.build( compile=True, run=True, debug=False)
 si = M.i[:] + 1
 st = M.t/ms
 st = st/1000
+
+plt.plot(Mv.t/ms, Mv[0].v/mV)
+plt.xlabel('Time (ms)')
+plt.ylabel('Membrane potential (mV)')
+plt.title('Membrane potential of neuron 0') 
+plt.show() 
 
 mdic = {"si":si, "st":st, "N":N, "T":T, "Ne":double(Ne), "dt":dt/second}
 savemat("brian2.mat",mdic)

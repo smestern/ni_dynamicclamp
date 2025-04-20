@@ -14,25 +14,25 @@ current_dir = os.path.abspath(os.path.dirname(__file__))
 @implementation('cpp', '''//''',  sources=[os.path.join(current_dir,
                                       'interface.cpp'), os.path.join(current_dir,'libnidaqmx.so')],
                 headers=['"interface.h"', '"NIDAQmx.h"'],
-                include_dirs=[current_dir], )
+                include_dirs=[current_dir], define_macros=[("HHDEBUG", "true")])
 @check_units(t=second, I=pA, result=mV)
 def step_clamp(t, I):
     raise NotImplementedError('step_clamp should not be called directly, this function is replaced by the C++ code')
 
 
-def init_neuron_device(device, dt=defaultclock.dt, scalefactor_in=0.1, scalefactor_out=1/0.5):
+def init_neuron_device(device, dt=defaultclock.dt, scalefactor_in=0.1, scalefactor_out=1/0.5, runtime=1.0):
     #one of these works cant figure out what fixed it
     prefs.codegen.cpp.include_dirs = [current_dir]
     prefs.codegen.cpp.library_dirs = [current_dir]
     prefs.codegen.cpp.headers = ['"interface.h"', '"NIDAQmx.h"']
 
     #here we call our function to intialize the NIDAQ and start the recording
-    device.insert_code('after_start', f'init_ni({dt/ms}, {scalefactor_in}, {scalefactor_out});') #we want to make sure that the sampling rate is the same as the defaultclock.dt
+    device.insert_code('after_start', f'init_ni({dt/ms}, {scalefactor_in}, {scalefactor_out}, {runtime});') #we want to make sure that the sampling rate is the same as the defaultclock.dt
 
     device.insert_code('before_end', 'clean_up();') #clean up the NIDAQ, log the time
     return device
 
-def attach_neuron(neurongroup, idx=0, v_mem_var='v', i_mem_var='I_in', dt=defaultclock.dt):
+def attach_neuron(neurongroup, idx=0, v_mem_var='v', i_mem_var='I_in', dt=None, when='before_thresholds'):
     '''
     Helper function to subsitute neuron in brian2 neuron group with an invitro neuron. 
     '''
@@ -41,7 +41,7 @@ def attach_neuron(neurongroup, idx=0, v_mem_var='v', i_mem_var='I_in', dt=defaul
     neuron = neurongroup[idx]
     
     #add a run regularly statement to the neuron group
-    neuron.run_regularly(f'{v_mem_var} = step_clamp(t, {i_mem_var})', dt=dt)
+    neuron.run_regularly(f'{v_mem_var} = step_clamp(t, {i_mem_var})', dt=dt, when=when)
     #update the resetter of the full group to exclude the neuron we are attaching
     #replace the remaining idxs with a gapjunction like synapse
 

@@ -126,10 +126,13 @@ P.input_3 = 0
 # poisson input
 input = []
 sub = []
-#input=PoissonInput(CRH, 'ge', 1, 50.53785123*Hz, weight='we*input_1')
+input=PoissonInput(CRH, 'ge', 1, 50.53785123*Hz, weight='we*input_1')
 input2 = PoissonInput( CRH, 'ge', 1, 50*Hz, weight='we*input_2')
 input3 = PoissonInput( CRH, 'ge', 1, 75*Hz, weight='we*input_3')
 #input2 = PoissonInput( CRH, 'gi', 1, 1*Hz, weight=wi )
+
+
+
 # init
 P.v = ((randn(len(P)) * (2* mV))) + EL
 P.ge = (randn(len(P)) * 2 + 5) * nS

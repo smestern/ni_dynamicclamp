@@ -6,9 +6,17 @@
 
 extern "C" { 
 #include <NIDAQmx.h>
-
+#include <cstdlib>
 #define DAQmxErrChk(functionCall) if( DAQmxFailed(error=(functionCall)) ) goto Error; else;
+
+#ifdef HHDEBUG
+#include <hh_tester.h>
+#endif
+
+
 }
+
+
 
 
 extern "C" {float64 data = -0.070;}
@@ -74,28 +82,29 @@ int busySleep( uint32_t nanoseconds )
 
 int SAMPLE_RATE = 100000; //in Hz
 int LAST_READ = 0; //last 
-const long double TOLERANCE = 1e-9; //in seconds, the tolerance for the time difference between the network time and the code time
+const long double TOLERANCE = 1e-12; //in seconds, the tolerance for the time difference between the network time and the code time
 int32       error=0;
 TaskHandle  taskHandle=0;
 TaskHandle taskHandleWrite=0;
 static int  totalRead=0;
 int32       read_ni=0;
 float64 point;
-float64 SF_IN;
-float64 SF_OUT;
-long double LAST_READ_T = ClockGetTime();
-long double new_read_T = 0;
-long double now = ClockGetTime();
-long double full_run_time = ClockGetTime();
-long double step_time_real;
-long double step_time_net;
-long double LAST_NET_T = 0;
-long double total_debt = 0;
-long int steps_taken = 0;
-long double total_rate = 0;
+float64 SF_IN; //scale factor for input
+float64 SF_OUT; //scale factor for output
+long double LAST_READ_T = ClockGetTime(); //last read time
+long double new_read_T = 0; //new read time
+long double now = ClockGetTime(); //current time
+long double full_run_time = ClockGetTime(); //full run time
+long double step_time_real; //time steps in real time, in seconds
+long double step_time_net; //time steps in neural network time, in seconds
+long double LAST_NET_T = 0; //last network time
+long double total_debt = 0; //total debt in seconds
+long int steps_taken = 0; //total number of steps taken
+long double total_rate = 0; //total rate in seconds
+long double *read_times; //array for storing read times in debug mode
 
 
-extern "C" {
+extern "C" { //NI interface functions, in C style
 
 
 int nidaqrec(void)
@@ -111,9 +120,9 @@ int nidaqrec(void)
         DAQmxErrChk (DAQmxCreateTask("", &taskHandleWrite));
         
         //Analog input channel
-        DAQmxErrChk(DAQmxCreateAIVoltageChan(taskHandle, "Dev2/ai0", "", DAQmx_Val_RSE, -1.0, 1.0, DAQmx_Val_Volts, NULL));
+        DAQmxErrChk(DAQmxCreateAIVoltageChan(taskHandle, "Dev1/ai0", "", DAQmx_Val_RSE, -1.0, 1.0, DAQmx_Val_Volts, NULL));
         //Analog output channel
-        DAQmxErrChk(DAQmxCreateAOVoltageChan(taskHandleWrite, "Dev2/ao0", "", -1.0, 1.0, DAQmx_Val_Volts, NULL));
+        DAQmxErrChk(DAQmxCreateAOVoltageChan(taskHandleWrite, "Dev1/ao0", "", -2.0, 2.0, DAQmx_Val_Volts, NULL));
 
         //DAQmxErrChk (DAQmxCfgSampClkTiming(taskHandle,"",SAMPLE_RATE,DAQmx_Val_Rising,DAQmx_Val_ContSamps,1000));
 
@@ -165,7 +174,7 @@ void clean_up_ni(){
         DAQmxClearTask(taskHandle);
         DAQmxStopTask(taskHandleWrite);
         DAQmxClearTask(taskHandleWrite);
-        DAQmxResetDevice("Dev2");
+        DAQmxResetDevice("Dev1");
 }
 
 
@@ -178,6 +187,23 @@ double clean_up(){
 
         printf("Average clamp rate: %Lf ms\n", rate);
         printf("Run time: %Lf with total delay debt of: %Lf\n", (LAST_READ_T - full_run_time), total_debt);
+
+        #ifdef DEBUG
+        //dump the read times to a file
+        FILE *fp;
+        fp = fopen("/home/smestern/Dropbox/PVN_MODELLING_WORK/CADEX_MODEL/output/read_times.txt", "w");
+        if (fp == NULL) {
+                printf("Error opening file for writing\n");
+                return -1;
+        }
+        for (int i = 0; i < steps_taken/1000; i++) {
+                fprintf(fp, "%Lf\n", read_times[i]);
+        }
+        fclose(fp);
+        printf("Read times written to file\n");
+        free(read_times);
+        #endif
+
         clean_up_ni();  //clean up NI
         return 0.0;
 }
@@ -198,7 +224,7 @@ int set_thread_priority_max(){
 
 
 
-int init_ni(float64 net_clock_dt, float64 scalein, float64 scaleout){
+int init_ni(float64 net_clock_dt, float64 scalein, float64 scaleout, float64 runtime){
         //set the sample rate to the network clock rate
         set_thread_priority_max();
         SAMPLE_RATE = 1/(net_clock_dt/1000);
@@ -207,7 +233,23 @@ int init_ni(float64 net_clock_dt, float64 scalein, float64 scaleout){
         SF_OUT = scaleout;
         //initialize the NI card
         nidaqrec();
-       
+        //intialize an empty array for storing read times
+        #ifdef DEBUG
+        int total_steps = (int)(runtime+6)*SAMPLE_RATE; //total number of steps to take
+        //actually only sample every 1000 steps, so divide by 1000
+        total_steps = total_steps / 1000; // Corrected division
+        printf("Total steps: %d\n for a runtime of %d\n", total_steps, (int)runtime);
+        //allocate memory for the read times
+        read_times = (long double*)malloc((total_steps)*sizeof(long double));
+        printf("Read times: %p\n", read_times);
+        if (read_times == NULL) {
+                printf("Error allocating memory for read times\n");
+                return -1;
+        }
+        #endif
+
+
+
         return 0;
 }
 
@@ -223,38 +265,49 @@ double step_clamp(double t, double I) {
                 return data;
 
         } else {
-                //read the sample from the NI card
-                read_sample();
+                
 
                 //write the sample to the NI card
                 //check how much time has passed since last read
                 step_time_real = ClockGetTime() - LAST_READ_T; //time steps since last call of read, also in seconds
-                
-                //time steps since last call of read
-        }
-        
-        //check if the network time is ahead of the code time, if so, wait, otherwise proceed
-        if (step_time_net < step_time_real) { //if neural network time is ahead of code time, wait, otherwise proceed
-                //printf("Code running slower than real time with a delay of: %lf\n with a network step of : %lf\n and a real time of: %lf", 1000*(step_time_real-step_time_net), 1000*(step_time_net), 1000*(step_time_net));
-                //dont write just read and return
-                total_debt += (step_time_real - step_time_net);
-        } else {
-                
-                
-                write_sample(I*1e9); //write the current to the NI card
-                //force wait to slow the network down to match code time
-                //these funcions seem to be inaccurate, so we will use a busy wait instead, 
-                //stealing idea from https://github.com/CompEphys-team/stdpc/blob/17fa31b760e5f9210e22c84b2a702ce182971be4/src/drivers/Clock.cpp#L68
-                while ((step_time_net - step_time_real)>TOLERANCE){ //busy wait until the network time is behind the code time
-                        step_time_real = (ClockGetTime() - LAST_READ_T);
+                 //check if the network time is ahead of the code time, if so, wait, otherwise proceed
+                if (step_time_net < step_time_real) { //if neural network time is ahead of code time, wait, otherwise proceed
+                        //printf("Code running slower than real time with a delay of: %lf\n with a network step of : %lf\n and a real time of: %lf", 1000*(step_time_real-step_time_net), 1000*(step_time_net), 1000*(step_time_net));
+                        //dont write just read and return
+                        total_debt += (step_time_real - step_time_net);
+                } else {
+                        
+                        
+                        write_sample(I*1e9); //write the current to the NI card
+                        //force wait to slow the network down to match code time
+                        //these funcions seem to be inaccurate, so we will use a busy wait instead, 
+                        //stealing idea from https://github.com/CompEphys-team/stdpc/blob/17fa31b760e5f9210e22c84b2a702ce182971be4/src/drivers/Clock.cpp#L68
+                        while ((step_time_net - step_time_real)>TOLERANCE){ //busy wait until the network time is behind the code time
+                                step_time_real = (ClockGetTime() - LAST_READ_T);
+                        }
+                        //printf("Network running faster than real time with a step diff of: %Lf\n with a network step of : %Lf\n and a real time of: %Lf", 1000*(step_time_net - step_time_real), 1000*(step_time_real), 1000*(step_time_net));
+                        
                 }
-                //printf("Network running faster than real time with a step diff of: %Lf\n with a network step of : %Lf\n and a real time of: %Lf", 1000*(step_time_net - step_time_real), 1000*(step_time_real), 1000*(step_time_net));
                 
+                //read the sample from the NI card
+                read_sample();
         }
+       
+       
         LAST_NET_T = t;
         LAST_READ_T = step_time_real + LAST_READ_T;
         steps_taken++;
         total_rate+=step_time_real;
+        #ifdef DEBUG
+        //printf("Step time: %Lf\n", step_time_real);
+        //printf("Network time: %Lf\n", step_time_net);
+        //printf("steps taken: %ld\n", steps_taken);
+        //only store the read times every 1000 steps
+        if (steps_taken % 1000 == 0) {
+                read_times[steps_taken/1000-1] = step_time_real;
+        }
+        
+        #endif
         return data*SF_IN;
 }
 

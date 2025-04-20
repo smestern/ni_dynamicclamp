@@ -141,7 +141,7 @@ int set_thread_priority_max(){
 
 
 
-int init_ni(float64 net_clock_dt, float64 scalein, float64 scaleout){
+int init_ni(float64 net_clock_dt, float64 scalein, float64 scaleout, float64 runtime){
         //set the sample rate to the network clock rate
         set_thread_priority_max();
         SAMPLE_RATE = 1/(net_clock_dt/1000);
