@@ -14,7 +14,7 @@ current_dir = os.path.abspath(os.path.dirname(__file__))
 @implementation('cpp', '''//''',  sources=[os.path.join(current_dir,
                                       'interface.cpp'), os.path.join(current_dir,'libnidaqmx.so')],
                 headers=['"interface.h"', '"NIDAQmx.h"'],
-                include_dirs=[current_dir], define_macros=[("HHDEBUG", "true")])
+                include_dirs=[current_dir])
 @check_units(t=second, I=pA, result=mV)
 def step_clamp(t, I):
     raise NotImplementedError('step_clamp should not be called directly, this function is replaced by the C++ code')

@@ -6,12 +6,7 @@
 
 extern "C" { 
 #include <NIDAQmx.h>
-#include <cstdlib>
 #define DAQmxErrChk(functionCall) if( DAQmxFailed(error=(functionCall)) ) goto Error; else;
-
-#ifdef HHDEBUG
-#include <hh_tester.h>
-#endif
 
 
 }
@@ -226,7 +221,7 @@ int set_thread_priority_max(){
 
 int init_ni(float64 net_clock_dt, float64 scalein, float64 scaleout, float64 runtime){
         //set the sample rate to the network clock rate
-        set_thread_priority_max();
+        //set_thread_priority_max();
         SAMPLE_RATE = 1/(net_clock_dt/1000);
         //set the scale factors
         SF_IN = scalein;

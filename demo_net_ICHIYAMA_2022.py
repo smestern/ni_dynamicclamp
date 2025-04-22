@@ -94,12 +94,11 @@ GABA.tauw = FS['tauw']; GABA.a = FS['a']; GABA.b = FS['b']
 GABA.taue = tauCRH; CRH.taue = taue
 GABA.refrac = 1*ms
 CRH.refrac = (1 + np.abs(np.random.normal(loc=1.5, scale=1, size=500))) *ms
-
+P2.input_1 = 1
+P2.input_2 = 0
+P2.input_3 = 0
 if DYN_CLAMP:
-       neuron = P2[:1]
-       neuron.run_regularly(f'v =  step_clamp(t, d_I*int(t/second>3))', dt=defaultclock.dt)
-       neuron.Vcut = 0*mV
-
+       attach_neuron(CRH, 0, i_mem_var="d_I", dt=defaultclock.dt, when='start')
 
 
 #add_neuron = P[1:500]
@@ -120,9 +119,7 @@ EI = Synapses( CRH, GABA, on_pre='y=clip((y + wCRH), 0*nS, 30*nS)' ) #*(rand()<p
 EI.connect( True, p=p_ei )
 IE = Synapses( GABA, CRH, on_pre='gi+=wi*(rand()<p_w)' ) #*(rand()<p_w)
 IE.connect( True, p=p_ie )
-P.input_1 = 1
-P.input_2 = 0
-P.input_3 = 0
+
 # poisson input
 input = []
 sub = []
@@ -143,7 +140,7 @@ P.gi = ((randn(len(P)) * 2 + 5) + 0) * nS
 
 print("=== Net Sim Start ===")
 
-Mv = StateMonitor(CRH, ['v', 'd_I'], record=[0])
+Mv = StateMonitor(CRH, ['v', 'd_I', 'ge'], record=[0])
 #record the neurons 
 Mv2 = StateMonitor(GABA, 'v', record=GABA_TO_0)
 # Record the value of v when the threshold is crossed
@@ -155,14 +152,14 @@ if DYN_CLAMP:
 
 
 time_start = time.time()
-run(60*second, report='text')
+run(6*second, report='text')
 print(time.time() - time_start)
 subplot(211)
 plot(Mv.t/ms, Mv.v[0]/mV, label='v', c='k', alpha=0.5)
 spike_dict = M_crossings.spike_trains()
 scatter(spike_dict[0]/ms, np.full(len(spike_dict[0]), 10), c='r', marker='x')
 twinx()
-plot(Mv.t/ms, Mv.d_I[0]/pA, label='v2', c='r', alpha=0.5)
+plot(Mv.t/ms, Mv.d_I[0]/nS, label='v2', c='r', alpha=0.5)
 subplot(212)
 #plot the gaba responders
 for i,_ in enumerate(GABA_TO_0):
