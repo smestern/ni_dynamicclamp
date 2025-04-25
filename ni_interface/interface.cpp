@@ -6,6 +6,7 @@
 
 extern "C" { 
 #include <NIDAQmx.h>
+#include <cstdlib>
 #define DAQmxErrChk(functionCall) if( DAQmxFailed(error=(functionCall)) ) goto Error; else;
 
 
