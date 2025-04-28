@@ -32,23 +32,7 @@ def init_neuron_device(device, dt=defaultclock.dt, scalefactor_in=0.1, scalefact
     device.insert_code('before_end', 'clean_up();') #clean up the NIDAQ, log the time
     return device
 
-def attach_neuron_brute_force(neurongroup, eqs, idx=0, v_mem_var='v', i_mem_var='I_in', dt=None, when='before_thresholds'):
-    '''
-    Helper function to subsitute neuron in brian2 neuron group with an invitro neuron. 
-    '''
-    #slice the neuron group to only include the neuron we want to attach
-    #if eqs is a equation object we need to bruteforce sub
-    
-    neuron = NeuronGroup(1, model=eqs, threshold='v>Vcut', refractory=f'v>Vcut', method='euler')
-    
-    #add a run regularly statement to the neuron group
-    neuron.run_regularly(f'{v_mem_var} = step_clamp(t, {i_mem_var})', dt=dt, when=when)
-    #update the resetter of the full group to exclude the neuron we are attaching
-    
-
-    return neuron, neurongroup
-
-def attach_neuron_proxy(neurongroup, idx=0, v_mem_var='v', i_mem_var='I_in', dt=None, when='before_thresholds'):
+def attach_neuron(neurongroup, idx=0, v_mem_var='v', i_mem_var='I_in', dt=None, when='before_thresholds'):
     '''
     Helper function to subsitute neuron in brian2 neuron group with an invitro neuron. 
     '''
@@ -62,18 +46,4 @@ def attach_neuron_proxy(neurongroup, idx=0, v_mem_var='v', i_mem_var='I_in', dt=
     #replace the remaining idxs with a gapjunction like synapse
 
 
-    return neuron, neurongroup
-
-def attach_neuron(neurongroup, eqs=None, idx=0, v_mem_var='v', i_mem_var='I_in', dt=None, when='before_thresholds', method='proxy'):
-    '''
-    Helper function to subsitute neuron in brian2 neuron group with an invitro neuron. 
-    '''
-    #brute force method
-    if method == 'brute_force':
-        return attach_neuron_brute_force(neurongroup, eqs, idx, v_mem_var, i_mem_var, dt, when)
-    if method == 'proxy':
-        return attach_neuron_proxy(neurongroup, idx, v_mem_var, i_mem_var, dt, when)
-    else :
-        raise ValueError('Method must be either brute_force or substitution')
-    
     return neuron, neurongroup

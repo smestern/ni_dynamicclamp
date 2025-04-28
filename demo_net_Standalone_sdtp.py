@@ -21,7 +21,7 @@ dApre *= gmax
 
 eqs_neurons = '''
 v : volt
-d_I = clip((ge*nS*(Ee-v)), -550*pA, 550*pA) : amp
+d_I = clip((ge*10*nS*(Ee-v)), -550*pA, 550*pA) : amp
 dge/dt = -ge / taue : 1
 '''
 

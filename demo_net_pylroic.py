@@ -149,7 +149,7 @@ circuit.m_Kd = 'm_Kd_inf'
 circuit.neur_dyn = 1
 
 #circuit[1].run_regularly(f'V_s = -70*mV')
-dyn_clamp_neuron,_ = attach_neuron(circuit, 0, 'V_s', 'I_total', dt=0.1*ms)
+dyn_clamp_neuron,_ = attach_neuron(circuit, 1, 'V_s', 'I_total', dt=0.1*ms)
 dyn_clamp_neuron.neur_dyn = 0
 # %% [markdown]
 # The definition of the synapses and the simulation protocol are identical to the simplified model:

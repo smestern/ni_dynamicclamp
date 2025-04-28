@@ -78,7 +78,7 @@ int busySleep( uint32_t nanoseconds )
 
 int SAMPLE_RATE = 100000; //in Hz
 int LAST_READ = 0; //last 
-const long double TOLERANCE = 1e-12; //in seconds, the tolerance for the time difference between the network time and the code time
+const long double TOLERANCE = 1e-9; //in seconds, the tolerance for the time difference between the network time and the code time
 int32       error=0;
 TaskHandle  taskHandle=0;
 TaskHandle taskHandleWrite=0;

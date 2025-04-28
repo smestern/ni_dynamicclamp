@@ -11,4 +11,4 @@ example_1_complex/*
 *.pkl
 */__pycache__/*
 *.pyc
-
+/STDP_standalone/*
