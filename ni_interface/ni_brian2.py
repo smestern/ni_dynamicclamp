@@ -20,7 +20,7 @@ def step_clamp(t, I):
     raise NotImplementedError('step_clamp should not be called directly, this function is replaced by the C++ code')
 
 
-def init_neuron_device(device, dt=defaultclock.dt, scalefactor_in=0.1, scalefactor_out=1/0.5, runtime=1.0):
+def init_neuron_device(device, dt=defaultclock.dt, scalefactor_in=0.1, scalefactor_out=1/0.5, runtime=1.0, proxy_spike=False):
     #one of these works cant figure out what fixed it
     prefs.codegen.cpp.include_dirs = [current_dir]
     prefs.codegen.cpp.library_dirs = [current_dir]
@@ -28,7 +28,8 @@ def init_neuron_device(device, dt=defaultclock.dt, scalefactor_in=0.1, scalefact
 
     #here we call our function to intialize the NIDAQ and start the recording
     device.insert_code('after_start', f'init_ni({dt/ms}, {scalefactor_in}, {scalefactor_out}, {runtime});') #we want to make sure that the sampling rate is the same as the defaultclock.dt
-
+    if proxy_spike:
+        device.insert_code('after_start', f'turn_on_proxy_spike(-30., -70.);') #
     device.insert_code('before_end', 'clean_up();') #clean up the NIDAQ, log the time
     return device
 
@@ -39,7 +40,7 @@ def attach_neuron_brute_force(neurongroup, eqs, idx=0, v_mem_var='v', i_mem_var=
     #slice the neuron group to only include the neuron we want to attach
     #if eqs is a equation object we need to bruteforce sub
     
-    neuron = NeuronGroup(1, model=eqs, threshold='v>Vcut', refractory=f'v>Vcut', method='euler')
+    neuron = NeuronGroup(1, model=eqs, threshold='v>Vcut', refractory=f'v>(Vcut - 3*mV)', method='euler')
     
     #add a run regularly statement to the neuron group
     neuron.run_regularly(f'{v_mem_var} = step_clamp(t, {i_mem_var})', dt=dt, when=when)

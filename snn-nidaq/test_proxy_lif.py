@@ -1,12 +1,12 @@
 import torch, torch.nn as nn
-import snntorch as snn
+#import snntorch as snn
 import sys
 import faulthandler
 
 faulthandler.enable() #to debug seg faults and timeouts
 batch_size = 4
 data_path='./data/mnist'
-sys.path.append('/home/smestern/Dropbox/RTXI/ni_interface')
+sys.path.append('/home/smestern/Dropbox/ni_dynamicclamp/ni_interface/')
 #import ni_generic as ni
 from lif_tester import lif_model
 import utils_snn as utils

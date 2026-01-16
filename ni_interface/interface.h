@@ -16,6 +16,7 @@ void read_sample();
 
 }
 int init_ni(float64 net_clock_dt, float64 scalein, float64 scaleout, float64 runtime);
+void turn_on_proxy_spike(long double vthresh, long double vreset);
 double clean_up();
 double step_clamp(double t, double I);
 int set_thread_priority_max();

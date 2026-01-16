@@ -97,6 +97,10 @@ long double LAST_NET_T = 0; //last network time
 long double total_debt = 0; //total debt in seconds
 long int steps_taken = 0; //total number of steps taken
 long double total_rate = 0; //total rate in seconds
+int last_spike = 0; //last spike time
+long double vthresh = 0.0; //voltage threshold
+long double vreset = 0.0; //reset voltage
+bool proxy_spike = false; //proxy spike flag 
 long double *read_times; //array for storing read times in debug mode
 
 
@@ -229,6 +233,7 @@ int init_ni(float64 net_clock_dt, float64 scalein, float64 scaleout, float64 run
         SF_OUT = scaleout;
         //initialize the NI card
         nidaqrec();
+        printf("NI card initialized\n with scale factors: %f and %f\n", SF_IN, SF_OUT);
         //intialize an empty array for storing read times
         #ifdef DEBUG
         int total_steps = (int)(runtime+6)*SAMPLE_RATE; //total number of steps to take
@@ -244,9 +249,22 @@ int init_ni(float64 net_clock_dt, float64 scalein, float64 scaleout, float64 run
         }
         #endif
 
+        //if the user wants to use proxy spikes, set the vthresh and vreset values, this is essentially a hack to trick brian2 
+        //into not freaking out when the voltage is too high and its trying to reset the neuron
+
 
 
         return 0;
+}
+
+void turn_on_proxy_spike(long double _vthresh, long double _vreset){
+        //call this function prior to running the simulation to set the proxy spike values
+        proxy_spike = true;
+        //set the vthresh and vreset values
+        vthresh = _vthresh/1000; //convert to volts
+        vreset = _vreset/1000;
+        printf("Proxy spike turned on with vthresh: %Lf and vreset: %Lf\n", vthresh, vreset);
+        //set the last spike time to 0  
 }
 
 double step_clamp(double t, double I) {
@@ -304,6 +322,29 @@ double step_clamp(double t, double I) {
         }
         
         #endif
+        if (proxy_spike) {
+                //to trick brian2 we need to let the neuron go over the threshold for one step
+                ///use the last_spike variable to store the last spike time
+                //printf("Proxy spike turned on with vthresh: %Lf and vreset: %.6f\n", vthresh, (data*SF_IN));
+                if (data*SF_IN > vthresh) {
+                        printf("Proxy spike at time: %Lf\n", t);
+                        if (last_spike == 0) {
+                                last_spike = 1;
+                        } else {
+                                data = vreset/SF_IN;
+                                printf("Proxy spike turned on with vthresh: %Lf and vreset: %.6f\n", vthresh, (data*SF_IN));
+
+                        }
+                        
+                        
+                } else {
+                        //if the voltage is below the threshold, reset the last spike time
+                        last_spike = 0;
+                        printf("Proxy spike turned off with vthresh: %Lf and vreset: %.6f\n", vthresh, (data*SF_IN));
+                }
+        }
+
+
         return data*SF_IN;
 }
 
