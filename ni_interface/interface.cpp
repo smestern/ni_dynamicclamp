@@ -314,7 +314,8 @@ double step_clamp(double t, double I)
         LAST_READ_T = step_time_real + LAST_READ_T;
         steps_taken++;
         total_rate += step_time_real;
-#ifdef DEBUG
+        #ifdef DEBUG
+        // if the user is debugging we want to let em know how long each step is taking
         // printf("Step time: %Lf\n", step_time_real);
         // printf("Network time: %Lf\n", step_time_net);
         // printf("steps taken: %ld\n", steps_taken);
@@ -324,7 +325,7 @@ double step_clamp(double t, double I)
                 read_times[steps_taken / 1000 - 1] = step_time_real;
         }
 
-#endif
+        #endif
         if (proxy_spike)
         {
                 // to trick brian2 we need to let the neuron go over the threshold for one step
