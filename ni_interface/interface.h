@@ -12,8 +12,8 @@ extern float64 data;
 
 extern "C" {
 int nidaqrec(void);
-void read_sample();
-
+int read_sample();
+int write_sample(float64 val);
 }
 int init_ni(float64 net_clock_dt, float64 scalein, float64 scaleout, float64 runtime);
 void turn_on_proxy_spike(long double vthresh, long double vreset);

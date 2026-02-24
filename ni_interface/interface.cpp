@@ -23,9 +23,9 @@ extern "C"
 #include <sys/timeb.h>
 // needs -lrt (real-time lib)
 // 1970-01-01 epoch UTC time, 1 mcs resolution (divide by 1M to get time_t)
-struct timespec ts;
 long double ClockGetTime()
 {
+        struct timespec ts; // local to avoid thread-safety issues
         clock_gettime(CLOCK_MONOTONIC, &ts);
         return (long double)(ts.tv_sec * 1000000LL + ts.tv_nsec / 1000LL) / 1e6; // in seconds
 }
@@ -78,7 +78,7 @@ int busySleep(uint32_t nanoseconds)
 
 int SAMPLE_RATE = 100000;           // in Hz
 int LAST_READ = 0;                  // last
-const long double TOLERANCE = 1e-9; // in seconds, the tolerance for the time difference between the network time and the code time
+const long double TOLERANCE = 5e-7; // in seconds (~500ns), matched to clock_gettime resolution to reduce busy-wait iterations
 int32 error = 0;
 TaskHandle taskHandle = 0;
 TaskHandle taskHandleWrite = 0;
@@ -142,28 +142,53 @@ extern "C"
 
                 // Stop and clear task
 
+                return 0; // success
+
         Error:
                 if (DAQmxFailed(error))
                         DAQmxGetExtendedErrorInfo(errBuff, 2048);
                 if (taskHandle != 0)
                 {
-                        // DAQmxStopTask(taskHandle);
-                        // DAQmxClearTask(taskHandle);
+                        DAQmxStopTask(taskHandle);
+                        DAQmxClearTask(taskHandle);
+                        taskHandle = 0;
+                }
+                if (taskHandleWrite != 0)
+                {
+                        DAQmxStopTask(taskHandleWrite);
+                        DAQmxClearTask(taskHandleWrite);
+                        taskHandleWrite = 0;
                 }
                 if (DAQmxFailed(error))
                         printf("DAQmx Error: %s\n", errBuff);
-                return 50;
+                return -1; // failure
         }
 
-        void read_sample()
+        int read_sample()
         {
-                DAQmxReadAnalogF64(taskHandle, 1, 1.0e-6, DAQmx_Val_GroupByScanNumber, &data, 1, &read_ni, NULL);
+                int32 err = DAQmxReadAnalogF64(taskHandle, 1, 1.0e-6, DAQmx_Val_GroupByScanNumber, &data, 1, &read_ni, NULL);
+                if (DAQmxFailed(err))
+                {
+#ifdef DEBUG
+                        printf("DAQmx read error: %d\n", (int)err);
+#endif
+                        return -1;
+                }
+                return 0;
         }
 
-        void write_sample(float64 val)
+        int write_sample(float64 val)
         {
                 val = val * SF_OUT;
-                DAQmxWriteAnalogF64(taskHandleWrite, 1, 1, 1.0e-6, DAQmx_Val_GroupByScanNumber, &val, NULL, NULL);
+                int32 err = DAQmxWriteAnalogF64(taskHandleWrite, 1, 1, 1.0e-6, DAQmx_Val_GroupByScanNumber, &val, NULL, NULL);
+                if (DAQmxFailed(err))
+                {
+#ifdef DEBUG
+                        printf("DAQmx write error: %d\n", (int)err);
+#endif
+                        return -1;
+                }
+                return 0;
         }
 
         void clean_up_ni()
@@ -208,29 +233,34 @@ double clean_up()
 
 int set_thread_priority_max()
 {
-        int policy;
         struct sched_param param;
-        pthread_attr_t attr;
         int ret;
 
-        ret = pthread_attr_setschedpolicy(&attr, SCHED_FIFO);
-        printf("ret: %d\n", ret);
-        pthread_getschedparam(pthread_self(), &policy, &param);
         param.sched_priority = sched_get_priority_max(SCHED_FIFO); // set to RT priority
-        ret = pthread_setschedparam(pthread_self(), policy, &param);
+        ret = pthread_setschedparam(pthread_self(), SCHED_FIFO, &param);
+        if (ret != 0)
+        {
+                printf("Warning: failed to set RT priority (error %d). Run as root or with CAP_SYS_NICE.\n", ret);
+                return -1;
+        }
+        printf("Thread set to SCHED_FIFO with priority %d\n", param.sched_priority);
         return 0;
 }
 
 int init_ni(float64 net_clock_dt, float64 scalein, float64 scaleout, float64 runtime)
 {
         // set the sample rate to the network clock rate
-        // set_thread_priority_max();
+        set_thread_priority_max(); // attempt RT scheduling (requires root or CAP_SYS_NICE)
         SAMPLE_RATE = 1 / (net_clock_dt / 1000);
         // set the scale factors
         SF_IN = scalein;
         SF_OUT = scaleout;
         // initialize the NI card
-        nidaqrec();
+        if (nidaqrec() != 0)
+        {
+                printf("Error: NI card initialization failed\n");
+                return -1;
+        }
         printf("NI card initialized\n with scale factors: %f and %f\n", SF_IN, SF_OUT);
 // intialize an empty array for storing read times
 #ifdef DEBUG
@@ -287,53 +317,45 @@ double step_clamp(double t, double I)
                 step_time_real = ClockGetTime() - LAST_READ_T; // time steps since last call of read, also in seconds
                                                                // check if the network time is ahead of the code time, if so, wait, otherwise proceed
                 if (step_time_net < step_time_real)
-                { // if neural network time is ahead of code time, wait, otherwise proceed
-                        // printf("Code running slower than real time with a delay of: %lf\n with a network step of : %lf\n and a real time of: %lf", 1000*(step_time_real-step_time_net), 1000*(step_time_net), 1000*(step_time_net));
-                        // dont write just read and return
+                { // simulation fell behind real time — read but skip write
                         total_debt += (step_time_real - step_time_net);
+                        // read the sample from the NI card (previous output remains)
+                        read_sample();
                 }
                 else
                 {
-
-                        write_sample(I * 1e9); // write the current to the NI card
-                        // force wait to slow the network down to match code time
-                        // these funcions seem to be inaccurate, so we will use a busy wait instead,
-                        // stealing idea from https://github.com/CompEphys-team/stdpc/blob/17fa31b760e5f9210e22c84b2a702ce182971be4/src/drivers/Clock.cpp#L68
+                        // busy-wait until real time catches up to network time
                         while ((step_time_net - step_time_real) > TOLERANCE)
-                        { // busy wait until the network time is behind the code time
+                        {
                                 step_time_real = (ClockGetTime() - LAST_READ_T);
                         }
-                        // printf("Network running faster than real time with a step diff of: %Lf\n with a network step of : %Lf\n and a real time of: %Lf", 1000*(step_time_net - step_time_real), 1000*(step_time_real), 1000*(step_time_net));
-                }
 
-                // read the sample from the NI card
-                read_sample();
+                        // read FIRST for correct causal ordering: read V(t), then write I(t)
+                        read_sample();
+                        write_sample(I * 1e9); // write the current to the NI card
+                }
         }
 
         LAST_NET_T = t;
         LAST_READ_T = step_time_real + LAST_READ_T;
         steps_taken++;
         total_rate += step_time_real;
-        #ifdef DEBUG
-        // if the user is debugging we want to let em know how long each step is taking
-        // printf("Step time: %Lf\n", step_time_real);
-        // printf("Network time: %Lf\n", step_time_net);
-        // printf("steps taken: %ld\n", steps_taken);
+#ifdef DEBUG
         // only store the read times every 1000 steps
         if (steps_taken % 1000 == 0)
         {
                 read_times[steps_taken / 1000 - 1] = step_time_real;
         }
-
-        #endif
+#endif
         if (proxy_spike)
         {
                 // to trick brian2 we need to let the neuron go over the threshold for one step
-                /// use the last_spike variable to store the last spike time
-                // printf("Proxy spike turned on with vthresh: %Lf and vreset: %.6f\n", vthresh, (data*SF_IN));
+                // use the last_spike variable to track threshold crossings
                 if (data * SF_IN > vthresh)
                 {
+#ifdef DEBUG
                         printf("Proxy spike at time: %Lf\n", t);
+#endif
                         if (last_spike == 0)
                         {
                                 last_spike = 1;
@@ -341,14 +363,11 @@ double step_clamp(double t, double I)
                         else
                         {
                                 data = vreset / SF_IN;
-                                printf("Proxy spike turned on with vthresh: %Lf and vreset: %.6f\n", vthresh, (data * SF_IN));
                         }
                 }
                 else
                 {
-                        // if the voltage is below the threshold, reset the last spike time
                         last_spike = 0;
-                        printf("Proxy spike turned off with vthresh: %Lf and vreset: %.6f\n", vthresh, (data * SF_IN));
                 }
         }
 
