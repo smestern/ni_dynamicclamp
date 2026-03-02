@@ -349,9 +349,11 @@ double step_clamp(double t, double I)
                                 step_time_real = (ClockGetTime() - LAST_READ_T);
                         }
 
-                        // read FIRST for correct causal ordering: read V(t), then write I(t)
-                        read_sample();
+                        // inverted reading due to loop placement 
+                        //brian2 integrates forward-> send current->apply current -> get signal-> volt used for next step
                         write_sample(I * 1e9); // write the current to the NI card
+                        read_sample();
+                        
                 }
         }
 
