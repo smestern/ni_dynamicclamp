@@ -21,13 +21,15 @@ extern "C"
 
 #include <time.h>
 #include <sys/timeb.h>
+#include <sched.h>
 // needs -lrt (real-time lib)
-// 1970-01-01 epoch UTC time, 1 mcs resolution (divide by 1M to get time_t)
+// Returns wall-clock time in seconds with full nanosecond precision.
+// Uses CLOCK_MONOTONIC_RAW to avoid NTP adjtime slewing.
 long double ClockGetTime()
 {
         struct timespec ts; // local to avoid thread-safety issues
-        clock_gettime(CLOCK_MONOTONIC, &ts);
-        return (long double)(ts.tv_sec * 1000000LL + ts.tv_nsec / 1000LL) / 1e6; // in seconds
+        clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
+        return (long double)ts.tv_sec + (long double)ts.tv_nsec / 1e9L; // in seconds, full ns precision
 }
 #define tscmp(a, b, CMP) \
         (((a)->tv_sec == (b)->tv_sec) ? ((a)->tv_nsec CMP(b)->tv_nsec) : ((a)->tv_sec CMP(b)->tv_sec))
@@ -78,7 +80,7 @@ int busySleep(uint32_t nanoseconds)
 
 int SAMPLE_RATE = 100000;           // in Hz
 int LAST_READ = 0;                  // last
-const long double TOLERANCE = 5e-7; // in seconds (~500ns), matched to clock_gettime resolution to reduce busy-wait iterations
+const long double TOLERANCE = 5e-7; // in seconds (~500ns), well above clock_gettime ns resolution; controls busy-wait exit precision
 int32 error = 0;
 TaskHandle taskHandle = 0;
 TaskHandle taskHandleWrite = 0;
@@ -236,7 +238,24 @@ int set_thread_priority_max()
         struct sched_param param;
         int ret;
 
-        param.sched_priority = sched_get_priority_max(SCHED_FIFO); // set to RT priority
+        // Pin this thread to a dedicated core (core 4) so the busy-wait
+        // doesn't compete with NI driver and kernel IRQ threads on other cores.
+        cpu_set_t cpuset;
+        CPU_ZERO(&cpuset);
+        CPU_SET(4, &cpuset); // pin to core 4 (0-indexed); adjust for your system
+        ret = pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
+        if (ret != 0)
+        {
+                printf("Warning: failed to set CPU affinity (error %d).\n", ret);
+        }
+        else
+        {
+                printf("Thread pinned to CPU core 4\n");
+        }
+
+        // Use mid-range FIFO priority (~50) so NI driver IRQ threads
+        // (often priority 50-90) can still preempt during I/O waits.
+        param.sched_priority = 50;
         ret = pthread_setschedparam(pthread_self(), SCHED_FIFO, &param);
         if (ret != 0)
         {
@@ -337,9 +356,11 @@ double step_clamp(double t, double I)
         }
 
         LAST_NET_T = t;
-        LAST_READ_T = step_time_real + LAST_READ_T;
+        // Anchor to target time, not measured time: prevents overshoot from
+        // accumulating across steps. Each deadline is exactly dt after the previous.
+        LAST_READ_T += step_time_net;
         steps_taken++;
-        total_rate += step_time_real;
+        total_rate += step_time_net; // use target step size for rate reporting (debt tracked separately)
 #ifdef DEBUG
         // only store the read times every 1000 steps
         if (steps_taken % 1000 == 0)
