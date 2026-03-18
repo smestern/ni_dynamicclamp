@@ -4,19 +4,19 @@
 #include <pthread.h>
 
 extern "C"
-{
-#include <NIDAQmx.h>
+{ // NI-DAQmx C API is C-style, so we wrap it in extern "C" to avoid name mangling
+#include <NIDAQmx.h> 
 #include <cstdlib>
 #define DAQmxErrChk(functionCall)                \
         if (DAQmxFailed(error = (functionCall))) \
                 goto Error;                      \
         else                                     \
                 ;
-}
-
-extern "C"
-{
-        float64 data = -0.070;
+// global variables for NI interface
+float64 data = -0.070; // default value to prevent brian2 from freaking out
+char errBuff[2048] = {'\0'}; // buffer for error messages
+char aIChan[256] = "Dev1/ai0"; // default analog input channel, I don't know why the user would want to go over 255 characters but just in case, and also to prevent buffer overflow
+char aOChan[256] = "Dev1/ao0"; // default analog output channel I don't know why the user would want to go over 255 characters but just in case, and also to prevent buffer overflow
 }
 
 #include <time.h>
@@ -99,11 +99,16 @@ long double LAST_NET_T = 0;                 // last network time
 long double total_debt = 0;                 // total debt in seconds
 long int steps_taken = 0;                   // total number of steps taken
 long double total_rate = 0;                 // total rate in seconds
+
+/// @brief Variables for proxy spike mechanism to allow brian2 to run without freaking out about voltages that are too high, this is essentially a hack to allow brian2 to run without 
+/// detecting like 5 spikes
 int last_spike = 0;                         // last spike time
 long double vthresh = 0.0;                  // voltage threshold
 long double vreset = 0.0;                   // reset voltage
 bool proxy_spike = false;                   // proxy spike flag
-long double *read_times;                    // array for storing read times in debug mode
+long double *read_times;  
+
+// array for storing read times in debug mode
 
 extern "C"
 { // NI interface functions, in C style
@@ -121,9 +126,9 @@ extern "C"
                 DAQmxErrChk(DAQmxCreateTask("", &taskHandleWrite));
 
                 // Analog input channel
-                DAQmxErrChk(DAQmxCreateAIVoltageChan(taskHandle, "Dev1/ai0", "", DAQmx_Val_RSE, -1.0, 1.0, DAQmx_Val_Volts, NULL));
+                DAQmxErrChk(DAQmxCreateAIVoltageChan(taskHandle, aIChan, "", DAQmx_Val_RSE, -1.0, 1.0, DAQmx_Val_Volts, NULL));
                 // Analog output channel
-                DAQmxErrChk(DAQmxCreateAOVoltageChan(taskHandleWrite, "Dev1/ao0", "", -2.0, 2.0, DAQmx_Val_Volts, NULL));
+                DAQmxErrChk(DAQmxCreateAOVoltageChan(taskHandleWrite, aOChan, "", -2.0, 2.0, DAQmx_Val_Volts, NULL));
 
                 // DAQmxErrChk (DAQmxCfgSampClkTiming(taskHandle,"",SAMPLE_RATE,DAQmx_Val_Rising,DAQmx_Val_ContSamps,1000));
 
@@ -266,7 +271,7 @@ int set_thread_priority_max()
         return 0;
 }
 
-int init_ni(float64 net_clock_dt, float64 scalein, float64 scaleout, float64 runtime)
+int init_ni(float64 net_clock_dt, float64 scalein, float64 scaleout, float64 runtime, char *aI, char *aO)
 {
         // set the sample rate to the network clock rate
         set_thread_priority_max(); // attempt RT scheduling (requires root or CAP_SYS_NICE)
@@ -274,6 +279,19 @@ int init_ni(float64 net_clock_dt, float64 scalein, float64 scaleout, float64 run
         // set the scale factors
         SF_IN = scalein;
         SF_OUT = scaleout;
+        // set the channel names if provided
+        if (aI != NULL)
+        {
+                strncpy(aIChan, aI, sizeof(aIChan) - 1);
+                aIChan[sizeof(aIChan) - 1] = '\0'; // ensure null-termination
+        }
+        if (aO != NULL)
+        {
+                strncpy(aOChan, aO, sizeof(aOChan) - 1);
+                aOChan[sizeof(aOChan) - 1] = '\0'; // ensure null-termination
+        }         
+
+
         // initialize the NI card
         if (nidaqrec() != 0)
         {
@@ -349,11 +367,10 @@ double step_clamp(double t, double I)
                                 step_time_real = (ClockGetTime() - LAST_READ_T);
                         }
 
-                        // inverted reading due to loop placement 
-                        //brian2 integrates forward-> send current->apply current -> get signal-> volt used for next step
+                        // inverted reading due to loop placement
+                        // brian2 integrates forward-> send current->apply current -> get signal-> volt used for next step
                         write_sample(I * 1e9); // write the current to the NI card
                         read_sample();
-                        
                 }
         }
 

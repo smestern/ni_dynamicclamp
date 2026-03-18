@@ -10,7 +10,7 @@ faulthandler.enable(file=sys.stdout) #to debug seg faults and timeouts
 #get the path to the current file
 path = os.path.dirname(os.path.abspath(__file__))
 
-libc = cdll.LoadLibrary("/home/smestern/Dropbox/RTXI/ni_interface/interface_c.so")
+libc = cdll.LoadLibrary(os.path.join(path, "interface_c.so"))
 
 step_clamp_loop = libc.run_step_loop
 step_clamp_loop.restype = None
