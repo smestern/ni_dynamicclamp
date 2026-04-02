@@ -46,7 +46,7 @@ def init_neuron_device(device, dt=defaultclock.dt, scalefactor_in=0.1, scalefact
     prefs.codegen.cpp.headers = ['"interface.h"', '"NIDAQmx.h"'] #again link the header files, not sure if this is necessary but it seems to be
 
     #here we call our function to intialize the NIDAQ and start the recording
-    init_ni_str = f'init_ni({dt}, {scalefactor_in}, {scalefactor_out}, {runtime}, "{aI if aI is not None else ""}", "{aO if aO is not None else ""}");'
+    init_ni_str = f'init_ni({dt/ms}, {scalefactor_in}, {scalefactor_out}, {runtime}, "{aI if aI is not None else ""}", "{aO if aO is not None else ""}");'
     device.insert_code('after_start', init_ni_str) #we want to make sure that the sampling rate is the same as the defaultclock.dt
     if proxy_spike:
         device.insert_code('after_start', f'turn_on_proxy_spike(-30., -70.);') #
@@ -57,8 +57,8 @@ def attach_neuron_brute_force(neurongroup, eqs, idx=0, v_mem_var='v', i_mem_var=
     '''
     Helper function to subsitute neuron in brian2 neuron group with an invitro neuron. 
     '''
-    #slice the neuron group to only include the neuron we want to attach
-    #if eqs is a equation object we need to bruteforce sub
+    #Now we create a new neuron group with the same equations as the original group, but with only one neuron, and we replace the equations with our own equations that include the step_clamp function,
+    #sometimes this helps with speed in brian2. But can be a bit hacky and may not work in all cases, especially if the original equations are complex or have a lot of state variables.
     
     neuron = NeuronGroup(1, model=eqs, threshold='v>Vcut', refractory=f'v>(Vcut - 3*mV)', method='euler')
     

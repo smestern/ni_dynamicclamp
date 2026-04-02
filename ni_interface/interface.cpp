@@ -7,6 +7,7 @@ extern "C"
 { // NI-DAQmx C API is C-style, so we wrap it in extern "C" to avoid name mangling
 #include <NIDAQmx.h> 
 #include <cstdlib>
+#include <cstring>
 #define DAQmxErrChk(functionCall)                \
         if (DAQmxFailed(error = (functionCall))) \
                 goto Error;                      \
