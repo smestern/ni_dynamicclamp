@@ -13,3 +13,5 @@ example_1_complex/*
 *.pyc
 /STDP_standalone/*
 ni_interface/tests/*.so
+AGENTS.md
+.github/**/*
