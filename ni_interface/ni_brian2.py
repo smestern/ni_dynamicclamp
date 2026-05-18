@@ -45,8 +45,11 @@ def init_neuron_device(device, dt=defaultclock.dt, scalefactor_in=0.1, scalefact
     prefs.codegen.cpp.library_dirs = [current_dir]
     prefs.codegen.cpp.headers = ['"interface.h"', '"NIDAQmx.h"'] #again link the header files, not sure if this is necessary but it seems to be
 
+    # Build explicit channel defaults here to avoid passing empty strings to C++.
+    ai_chan = aI if aI is not None else "Dev1/ai0"
+    ao_chan = aO if aO is not None else "Dev1/ao0"
     #here we call our function to intialize the NIDAQ and start the recording
-    init_ni_str = f'init_ni({dt/ms}, {scalefactor_in}, {scalefactor_out}, {runtime}, "{aI if aI is not None else ""}", "{aO if aO is not None else ""}");'
+    init_ni_str = f'init_ni({dt/ms}, {scalefactor_in}, {scalefactor_out}, {runtime}, "{ai_chan}", "{ao_chan}");'
     device.insert_code('after_start', init_ni_str) #we want to make sure that the sampling rate is the same as the defaultclock.dt
     if proxy_spike:
         device.insert_code('after_start', f'turn_on_proxy_spike(-30., -70.);') #

@@ -280,17 +280,19 @@ int init_ni(float64 net_clock_dt, float64 scalein, float64 scaleout, float64 run
         // set the scale factors
         SF_IN = scalein;
         SF_OUT = scaleout;
-        // set the channel names if provided
-        if (aI != NULL)
+        // Only override defaults when a non-empty channel string is provided.
+        if (aI != NULL && aI[0] != '\0')
         {
                 strncpy(aIChan, aI, sizeof(aIChan) - 1);
                 aIChan[sizeof(aIChan) - 1] = '\0'; // ensure null-termination
         }
-        if (aO != NULL)
+        if (aO != NULL && aO[0] != '\0')
         {
                 strncpy(aOChan, aO, sizeof(aOChan) - 1);
                 aOChan[sizeof(aOChan) - 1] = '\0'; // ensure null-termination
         }         
+
+        printf("Using channels AI='%s' AO='%s'\n", aIChan, aOChan);
 
 
         // initialize the NI card

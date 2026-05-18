@@ -12,3 +12,4 @@ example_1_complex/*
 */__pycache__/*
 *.pyc
 /STDP_standalone/*
+ni_interface/tests/*.so
