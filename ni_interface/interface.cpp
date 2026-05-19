@@ -250,6 +250,9 @@ extern "C"
         const char *get_ao_chan(void) { return aOChan; }
         double get_total_debt(void) { return (double)total_debt; }
         long get_steps_taken(void) { return steps_taken; }
+        // Anchored deadline (target time, not measured). Used by tests to
+        // assert that LAST_READ_T += step_time_net does not drift.
+        double get_last_read_t(void) { return (double)LAST_READ_T; }
 
 } // extern "C"
 
