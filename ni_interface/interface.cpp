@@ -78,7 +78,6 @@ float64 SF_OUT; // scale factor for output
 const long double TOLERANCE = 5e-7;         // in seconds (~500ns)
 int LAST_READ = 0;                          // last read sample count
 long double LAST_READ_T = ClockGetTime();   // last read time
-long double new_read_T = 0;                 // new read time
 long double now = ClockGetTime();           // current time
 long double full_run_time = ClockGetTime(); // full run time
 long double step_time_real;                 // time step in real time, in seconds
@@ -230,7 +229,6 @@ extern "C"
         {
                 LAST_READ = 0;
                 LAST_READ_T = ClockGetTime();
-                new_read_T = 0;
                 now = ClockGetTime();
                 full_run_time = ClockGetTime();
                 step_time_real = 0;
@@ -296,7 +294,7 @@ int set_thread_priority_max()
 int init_ni(float64 net_clock_dt, float64 scalein, float64 scaleout, float64 runtime, char *aI, char *aO)
 {
         // attempt RT scheduling (requires root or CAP_SYS_NICE)
-        set_thread_priority_max();
+        //set_thread_priority_max(); SOMEHOW THIS MAKES THINGS WORSE??? --- IGNORE ---
 
         // set the sample rate to the network clock rate
         SAMPLE_RATE = 1 / (net_clock_dt / 1000);
@@ -360,12 +358,13 @@ double step_clamp(double t, double I)
         step_time_net = (t - LAST_NET_T); // step in neural network time, in seconds
         if (step_time_net <= 0.0)
         {
-                // if for some reason the network time is negative or zero, do nothing
+                // if for some reason the network time is negative or zero, do nothing //this is likely the first step, so just read the initial value from the NI card without writing anything
+                read_sample();
                 // and return the last value
                 LAST_NET_T = t;
                 full_run_time = ClockGetTime(); // reset the full run time
                 LAST_READ_T = ClockGetTime();   // reset the last read time
-                return data;
+                ///return data; early return here breaks the timing loop and causes drift, so we just read without writing and let the timing loop handle it as normal 
         }
         else
         {
@@ -377,6 +376,7 @@ double step_clamp(double t, double I)
                 {
                         // simulation fell behind real time — read but skip write
                         total_debt += (step_time_real - step_time_net);
+                        printf("Warning: simulation is behind real time by %Lf seconds. Total debt is now %Lf seconds.\n", (step_time_real - step_time_net), total_debt);
                         // read the sample from the NI card (previous output remains)
                         read_sample();
                 }
@@ -399,10 +399,9 @@ double step_clamp(double t, double I)
         LAST_NET_T = t;
         // Anchor to target time, not measured time: prevents overshoot from
         // accumulating across steps. Each deadline is exactly dt after the previous.
-        LAST_READ_T += step_time_net;
+        LAST_READ_T += step_time_real;
         steps_taken++;
-        // use target step size for rate reporting (debt tracked separately)
-        total_rate += step_time_net;
+        total_rate += step_time_real;
 
 #ifdef DEBUG
         // only store the read times every 1000 steps
