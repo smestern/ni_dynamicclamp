@@ -15,7 +15,7 @@ N=10000
 K=100
 
 T=10*second
-dt=0.01*ms
+dt=0.1*ms
 
 we = 3.3276023360e-9*siemens
 wi = 8e-8*siemens

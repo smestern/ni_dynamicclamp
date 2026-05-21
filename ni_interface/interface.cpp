@@ -189,9 +189,9 @@ extern "C"
                 int32 err = DAQmxReadAnalogF64(taskHandle, 1, 1.0e-6, DAQmx_Val_GroupByScanNumber, &data, 1, &read_ni, NULL);
                 if (DAQmxFailed(err))
                 {
-#ifdef DEBUG
+                #ifdef DEBUG
                         printf("DAQmx read error: %d\n", (int)err);
-#endif
+                #endif
                         return -1;
                 }
                 return 0;
@@ -203,9 +203,9 @@ extern "C"
                 int32 err = DAQmxWriteAnalogF64(taskHandleWrite, 1, 1, 1.0e-6, DAQmx_Val_GroupByScanNumber, &val, NULL, NULL);
                 if (DAQmxFailed(err))
                 {
-#ifdef DEBUG
+                #ifdef DEBUG
                         printf("DAQmx write error: %d\n", (int)err);
-#endif
+                #endif
                         return -1;
                 }
                 return 0;
@@ -325,19 +325,19 @@ int init_ni(float64 net_clock_dt, float64 scalein, float64 scaleout, float64 run
         }
         printf("NI card initialized\n with scale factors: %f and %f\n", SF_IN, SF_OUT);
 
-#ifdef DEBUG
-        // initialize an empty array for storing read times (sampled every 1000 steps)
-        int total_steps = (int)(runtime + 6) * SAMPLE_RATE;
-        total_steps = total_steps / 1000;
-        printf("Total steps: %d\n for a runtime of %d\n", total_steps, (int)runtime);
-        read_times = (long double *)malloc((total_steps) * sizeof(long double));
-        printf("Read times: %p\n", read_times);
-        if (read_times == NULL)
-        {
-                printf("Error allocating memory for read times\n");
-                return -1;
-        }
-#endif
+        #ifdef DEBUG
+                // initialize an empty array for storing read times (sampled every 1000 steps)
+                int total_steps = (int)(runtime + 6) * SAMPLE_RATE;
+                total_steps = total_steps / 1000;
+                printf("Total steps: %d\n for a runtime of %d\n", total_steps, (int)runtime);
+                read_times = (long double *)malloc((total_steps) * sizeof(long double));
+                printf("Read times: %p\n", read_times);
+                if (read_times == NULL)
+                {
+                        printf("Error allocating memory for read times\n");
+                        return -1;
+                }
+        #endif
 
         return 0;
 }
@@ -354,7 +354,6 @@ void turn_on_proxy_spike(long double _vthresh, long double _vreset)
 double step_clamp(double t, double I)
 {
         // t in seconds, I in pA
-
         step_time_net = (t - LAST_NET_T); // step in neural network time, in seconds
         if (step_time_net <= 0.0)
         {
@@ -376,7 +375,9 @@ double step_clamp(double t, double I)
                 {
                         // simulation fell behind real time — read but skip write
                         total_debt += (step_time_real - step_time_net);
+                        #ifdef DEBUG
                         printf("Warning: simulation is behind real time by %Lf seconds. Total debt is now %Lf seconds.\n", (step_time_real - step_time_net), total_debt);
+                        #endif
                         // read the sample from the NI card (previous output remains)
                         read_sample();
                 }
@@ -417,9 +418,9 @@ double step_clamp(double t, double I)
                 // one step; use last_spike to track threshold crossings
                 if (data * SF_IN > vthresh)
                 {
-#ifdef DEBUG
+                #ifdef DEBUG
                         printf("Proxy spike at time: %Lf\n", t);
-#endif
+                #endif
                         if (last_spike == 0)
                         {
                                 last_spike = 1;
@@ -445,28 +446,28 @@ double clean_up()
         printf("Average clamp rate: %Lf ms\n", rate);
         printf("Run time: %Lf with total delay debt of: %Lf\n", (LAST_READ_T - full_run_time), total_debt);
 
-#ifdef DEBUG
-        // dump the read times to a file. Path is configurable via the
-        // NI_READ_TIMES_PATH env var; falls back to ./read_times.txt so the
-        // DEBUG build is portable across machines.
-        const char *rt_path = getenv("NI_READ_TIMES_PATH");
-        if (rt_path == NULL || rt_path[0] == '\0')
-                rt_path = "./read_times.txt";
-        FILE *fp;
-        fp = fopen(rt_path, "w");
-        if (fp == NULL)
-        {
-                printf("Error opening file for writing: %s\n", rt_path);
-                return -1;
-        }
-        for (int i = 0; i < steps_taken / 1000; i++)
-        {
-                fprintf(fp, "%Lf\n", read_times[i]);
-        }
-        fclose(fp);
-        printf("Read times written to file\n");
-        free(read_times);
-#endif
+        #ifdef DEBUG
+                // dump the read times to a file. Path is configurable via the
+                // NI_READ_TIMES_PATH env var; falls back to ./read_times.txt so the
+                // DEBUG build is portable across machines.
+                const char *rt_path = getenv("NI_READ_TIMES_PATH");
+                if (rt_path == NULL || rt_path[0] == '\0')
+                        rt_path = "./read_times.txt";
+                FILE *fp;
+                fp = fopen(rt_path, "w");
+                if (fp == NULL)
+                {
+                        printf("Error opening file for writing: %s\n", rt_path);
+                        return -1;
+                }
+                for (int i = 0; i < steps_taken / 1000; i++)
+                {
+                        fprintf(fp, "%Lf\n", read_times[i]);
+                }
+                fclose(fp);
+                printf("Read times written to file\n");
+                free(read_times);
+        #endif
 
         clean_up_ni();
         return 0.0;
