@@ -43,6 +43,8 @@ extern "C" {
     long get_steps_taken(void);
     double get_total_debt(void);
     double get_last_read_t(void);
+    double get_total_rate(void);
+    double get_run_time(void);
     void reset_state(void);
 }
 '''
@@ -75,6 +77,26 @@ static inline double ni_last_read_t(double dummy) {
 ''', **_IMPL_KW)
 @check_units(dummy=second, result=second)
 def ni_last_read_t(dummy):
+    raise NotImplementedError("Linked in from interface.cpp")
+
+
+@implementation('cpp', _FWD_DECLS + '''
+static inline double ni_total_rate(double dummy) {
+    (void)dummy; return get_total_rate();
+}
+''', **_IMPL_KW)
+@check_units(dummy=second, result=second)
+def ni_total_rate(dummy):
+    raise NotImplementedError("Linked in from interface.cpp")
+
+
+@implementation('cpp', _FWD_DECLS + '''
+static inline double ni_run_time(double dummy) {
+    (void)dummy; return get_run_time();
+}
+''', **_IMPL_KW)
+@check_units(dummy=second, result=second)
+def ni_run_time(dummy):
     raise NotImplementedError("Linked in from interface.cpp")
 
 

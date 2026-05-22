@@ -251,6 +251,14 @@ extern "C"
         // Anchored deadline (target time, not measured). Used by tests to
         // assert that LAST_READ_T += step_time_net does not drift.
         double get_last_read_t(void) { return (double)LAST_READ_T; }
+        // Running sum of measured per-step real-time intervals (seconds).
+        // Mean step time = get_total_rate() / get_steps_taken().
+        double get_total_rate(void) { return (double)total_rate; }
+        // Real-time elapsed inside step_clamp loop, measured by the same
+        // CLOCK_MONOTONIC_RAW source as the busy-wait. This is the
+        // authoritative wall time of the dynamic-clamp run; Brian2's
+        // outer timers include subprocess fork + init_ni + clean_up.
+        double get_run_time(void) { return (double)(LAST_READ_T - full_run_time); }
 
 } // extern "C"
 
