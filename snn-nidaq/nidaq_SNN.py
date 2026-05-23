@@ -1,6 +1,7 @@
 import torch, torch.nn as nn
 import snntorch as snn
 import sys
+import os
 import faulthandler
 faulthandler.enable() #to debug seg faults and timeouts
 batch_size = 128
@@ -11,6 +12,11 @@ from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 import numpy as np
 import matplotlib.pyplot as plt
+
+# NiDAQClampLayer (PyTorch wrapper around the precompiled libni.so).
+# Auto-falls back to ni_torch_dummy if libni.so is missing.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from ni_torch_layer import NiDAQClampLayer
 
 from snntorch import surrogate
 from snntorch import utils
@@ -98,11 +104,21 @@ class NiDAQ_NET(nn.Module):
         return spk_rec, mem_rec, loss_daq
 
     def write_daq(self, input, samps):
-        #write to DAQ
-        v_out = ni.loop_clamp(input.detach().cpu().numpy()*pA * 20)*1000
-        #min max scale between -100mV and 100mV
+        # Route through the NiDAQClampLayer. The original code multiplied
+        # by `pA * 20` before sending to the legacy `loop_clamp`; we keep
+        # the same numeric value flowing into the C step_clamp so the
+        # scaling stays identical to the pre-refactor behavior. The
+        # NiDAQClampLayer expects pA, so we convert amps -> pA at the
+        # boundary. (FIXME: the original `* pA * 20` produces ~1e-23 A
+        # of effective current; this is suspicious but preserved to
+        # avoid silently changing the experiment.)
+        I_pA = (input.detach().cpu() * pA * 20.0) * 1e12  # numerically same as input * 20
+        I_pA = I_pA.to(torch.float32)
+        with torch.no_grad():
+            v_volts = self.daq(I_pA).cpu().numpy()
+        v_out = v_volts * 1000.0  # V -> mV
         v_out = np.clip(v_out, -100, 100)
-        v_out = (v_out - -70)/(100 - -70)
+        v_out = (v_out - -70) / (100 - -70)
         return v_out
 
 def print_batch_accuracy(data, targets, train=False):
@@ -123,7 +139,14 @@ def train_printer():
     print("\n")
 
 
-daq = ni.init_ni(0.1, 0.1, 1/0.05)
+# Initialise the dynamic-clamp layer. dt_ms must match the network's per-step
+# integration step (here 1e-4 s = 0.1 ms). Use detach mode to mirror the
+# original training loop (loss back-prop'd through the proxy mem trace, not
+# through the DAQ read).
+daq = NiDAQClampLayer(
+    dt_ms=0.1, scalefactor_in=0.1, scalefactor_out=1 / 0.05,
+    grad_mode="detach",
+)
 
 loss = nn.CrossEntropyLoss()
 

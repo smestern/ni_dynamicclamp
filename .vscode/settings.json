@@ -69,5 +69,11 @@
     "python.testing.pytestEnabled": false,
     "python.testing.unittestEnabled": true,
     "python-envs.defaultEnvManager": "ms-python.python:conda",
-    "python-envs.defaultPackageManager": "ms-python.python:conda"
+    "python-envs.defaultPackageManager": "ms-python.python:conda",
+    "chat.tools.terminal.autoApprove": {
+        "/^cd ~/Dropbox/ni_dynamicclamp && python -c \"\nimport sys, os\nsys\\.path\\.insert\\(0, os\\.path\\.abspath\\('snn-nidaq'\\)\\)\nimport torch\nfrom ni_torch_layer import NiDAQClampLayer\n\n# Force dummy mode for smoke test\nlayer = NiDAQClampLayer\\(dt_ms=0\\.1, proxy_spike=True, grad_mode='surrogate', use_dummy=True\\)\nprint\\('backend:', layer\\.backend_name\\)\n\n# 1-D input\nI = torch\\.ones\\(100, dtype=torch\\.float32, requires_grad=True\\) \\* 200\\.0\nV = layer\\(I\\)\nprint\\('1D out shape:', V\\.shape, 'V range:', V\\.min\\(\\)\\.item\\(\\), V\\.max\\(\\)\\.item\\(\\)\\)\nprint\\('last_spikes shape:', layer\\.last_spikes\\.shape if layer\\.last_spikes is not None else None\\)\n\n# backward \\(surrogate\\)\nV\\.sum\\(\\)\\.backward\\(\\)\nprint\\('surrogate grad sum:', I\\.grad\\.sum\\(\\)\\.item\\(\\)\\)\n\n# 2-D input \\(T, B\\)\nlayer\\.reset_time\\(\\)\nI2 = torch\\.ones\\(50, 4, dtype=torch\\.float32\\) \\* 100\\.0\nV2 = layer\\(I2\\)\nprint\\('2D out shape:', V2\\.shape\\)\nlayer\\.close\\(\\)\n\n# detach mode\nlayer2 = NiDAQClampLayer\\(dt_ms=0\\.1, grad_mode='detach', use_dummy=True\\)\nI3 = torch\\.ones\\(10, requires_grad=True\\) \\* 50\\.\nV3 = layer2\\(I3\\)\nV3\\.sum\\(\\)\\.backward\\(\\)\nprint\\('detach grad:', I3\\.grad\\)  # should be None\nlayer2\\.close\\(\\)\nprint\\('OK'\\)\n\"$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
 }

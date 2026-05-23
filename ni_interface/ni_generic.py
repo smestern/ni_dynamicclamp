@@ -1,3 +1,15 @@
+"""FROZEN — legacy ctypes wrapper around ``interface_c.so``.
+
+New code should use:
+
+* ``ni_brian2.py`` for Brian2 ``cpp_standalone`` simulations, or
+* ``ni_torch.py`` (and the ``NiDAQClampLayer`` in
+  ``snn-nidaq/ni_torch_layer.py``) for PyTorch SNNs.
+
+Both of those paths load ``libni.so`` built from ``interface.cpp``. This
+module is kept only for the bench tooling in ``lif_tester.py`` and a few
+historic demo scripts. Do NOT port new features here.
+"""
 import sys
 import os
 #import ctypes

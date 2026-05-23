@@ -1,18 +1,39 @@
 import torch, torch.nn as nn
 #import snntorch as snn
 import sys
+import os
+import argparse
 import faulthandler
 
 faulthandler.enable() #to debug seg faults and timeouts
 batch_size = 4
 data_path='./data/mnist'
 sys.path.append('/home/smestern/Dropbox/ni_dynamicclamp/ni_interface/')
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 #import ni_generic as ni
 from lif_tester import lif_model
 import utils_snn as utils
 
 import matplotlib.pyplot as plt
 import numpy as np 
+
+# Optional real-DAQ path: same proxy_net but swap the offline lif_model
+# call for a NiDAQClampLayer forward. Use --use-daq on the command line.
+parser = argparse.ArgumentParser()
+parser.add_argument("--use-daq", action="store_true",
+                    help="Drive the real NI card via NiDAQClampLayer instead "
+                         "of the offline lif_model proxy.")
+parser.add_argument("--use-dummy", action="store_true",
+                    help="With --use-daq, force the ni_torch_dummy backend "
+                         "(no hardware required).")
+_args, _ = parser.parse_known_args()
+
+_daq_layer = None
+if _args.use_daq:
+    from ni_torch_layer import NiDAQClampLayer
+    _daq_layer = NiDAQClampLayer(
+        dt_ms=0.1, grad_mode="detach", use_dummy=_args.use_dummy,
+    )
 pA = 1e-12
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
@@ -65,8 +86,25 @@ class proxy_net(nn.Module):
         spk_ = []
         for x in range(cur_daq.shape[1]):
             temp_cur = cur_daq[:, x]
-            
-            resp, spikes = lif_model(temp_cur.detach().cpu().numpy() * 1000, dt=dt)
+
+            if _daq_layer is None:
+                # Offline proxy via brian2 LIF model.
+                resp, spikes = lif_model(temp_cur.detach().cpu().numpy() * 1000, dt=dt)
+            else:
+                # Real DAQ via NiDAQClampLayer. Convert the (units-free)
+                # network signal to pA the same way lif_model does internally
+                # (input * 1000) and feed it through the clamp. Spikes are
+                # taken from libni's proxy-spike flag if enabled, else zeros.
+                I_pA = (temp_cur.detach().cpu() * 1000.0).to(torch.float32)
+                with torch.no_grad():
+                    v_volts = _daq_layer(I_pA).cpu().numpy()
+                resp = v_volts * 1000.0  # V -> mV (parity with lif_model)
+                spikes = (
+                    _daq_layer.last_spikes.cpu().numpy()
+                    if _daq_layer.last_spikes is not None
+                    else np.zeros_like(resp)
+                )
+
             _x_proxy = torch.tensor(resp, dtype=torch.float32)
             out_mem.append(torch.tensor(_x_proxy, dtype=torch.float32, device=device))
             spk_.append(torch.tensor(spikes, dtype=torch.float32, device=device))

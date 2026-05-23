@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Build libni.so from interface.cpp for the PyTorch / ctypes hot-load path.
+#
+# Brian2's cpp_standalone build compiles interface.cpp as part of the
+# generated network — see ni_brian2.py. The PyTorch wrapper in ni_torch.py
+# cannot do that: it ctypes-loads a pre-built shared library at import time.
+#
+# Set NI_DEBUG=1 to enable the same -DDEBUG build the pytest suite uses
+# (per-step warning prints, read_times sampling, ./read_times.txt dump).
+#
+# Resulting library: ni_interface/libni.so
+
+set -euo pipefail
+cd "$(dirname "$0")"
+
+FLAGS=(-O2 -std=c++14 -shared -fPIC -Wall -Wno-write-strings)
+if [[ "${NI_DEBUG:-0}" != "0" ]]; then
+    FLAGS+=(-DDEBUG -g)
+fi
+
+g++ "${FLAGS[@]}" interface.cpp interface_torch_export.cpp -o libni.so -L. -lnidaqmx -lrt -lpthread
+echo "Built: $(pwd)/libni.so"

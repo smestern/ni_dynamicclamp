@@ -298,6 +298,11 @@ int set_thread_priority_max()
 }
 
 // ---- Public API ----
+// Compiled with default C++ linkage so Brian2's cpp_standalone codegen
+// sees these symbols exactly as it did pre-PyTorch-integration. The
+// PyTorch / ctypes path consumes them via `ni_*` C-linkage forwarding
+// shims defined in interface_torch_export.cpp (a separate translation
+// unit that is NOT compiled into Brian2's standalone build).
 
 int init_ni(float64 net_clock_dt, float64 scalein, float64 scaleout, float64 runtime, char *aI, char *aO)
 {
@@ -480,3 +485,8 @@ double clean_up()
         clean_up_ni();
         return 0.0;
 }
+
+// `run_step_loop` (batch entry point for the PyTorch / ctypes path) is
+// defined in interface_torch_export.cpp so that the C-linkage shims live
+// in a separate translation unit and don't perturb the Brian2 cpp_standalone
+// codegen path.

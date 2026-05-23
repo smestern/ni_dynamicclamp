@@ -1,3 +1,15 @@
+/* =========================================================================
+ * FROZEN — legacy C backend.
+ *
+ * New development goes through `interface.cpp` (Brian2 cpp_standalone path)
+ * and `ni_torch.py` (PyTorch ctypes path, loads `libni.so` built from
+ * `interface.cpp`). This file is kept only for the bench-test tooling in
+ * `lif_tester.py` and `interface_c.test.c`; do NOT port new features here.
+ *
+ * If you find yourself editing this, you almost certainly want
+ * `interface.cpp` instead.
+ * =========================================================================
+ */
 #include <stdio.h>
 #include <NIDAQmx.h>
 #include <time.h>
