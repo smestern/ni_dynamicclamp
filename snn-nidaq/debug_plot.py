@@ -30,10 +30,15 @@ from classifier_model import SNN_DAQ_Classifier, make_mnist_subset
 def parse_args():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--backend", choices=("dummy", "real"), default="dummy")
-    p.add_argument("--digits", type=int, nargs="+", default=[0, 1, 7])
+    p.add_argument("--digits", type=int, nargs="+", default=[0, 1, 3, 7],
+                   help="Must match the digits the checkpoint was trained on. "
+                        "If --init-from is given, the number of classes is "
+                        "cross-checked against the checkpoint and the digit "
+                        "list is truncated to fit.")
     p.add_argument("--num-steps", type=int, default=5000,
                    help="Time steps per sample (dt=0.1 ms). 5000 = 500 ms.")
-    p.add_argument("--num-hidden", type=int, default=64)
+    p.add_argument("--num-hidden", type=int, default=64,
+                   help="Ignored when --init-from is given (inferred from ckpt).")
     p.add_argument("--init-scale-pA", type=float, default=300.0)
     p.add_argument("--init-from", type=str, default=None,
                    help="Optional checkpoint to load before plotting.")
@@ -57,6 +62,32 @@ def main():
     import matplotlib.pyplot as plt
 
     torch.manual_seed(0)
+
+    # If we're loading a checkpoint, peek at its shapes so we build the
+    # model with matching num_classes / num_hidden. Otherwise stick with
+    # the CLI defaults.
+    num_hidden = args.num_hidden
+    ckpt_state = None
+    if args.init_from:
+        ckpt_state = torch.load(args.init_from, map_location="cpu")
+        try:
+            ckpt_num_classes = ckpt_state["head.2.weight"].shape[0]
+            ckpt_num_hidden = ckpt_state["fc1.weight"].shape[0]
+        except KeyError as e:
+            raise RuntimeError(
+                f"Checkpoint {args.init_from} is missing expected key {e}; "
+                "the model architecture may have changed."
+            )
+        if ckpt_num_classes != len(args.digits):
+            print(f"[init] checkpoint has {ckpt_num_classes} classes but "
+                  f"--digits supplied {len(args.digits)} "
+                  f"({args.digits}); truncating digits to "
+                  f"{args.digits[:ckpt_num_classes]}")
+            args.digits = list(args.digits[:ckpt_num_classes])
+        if ckpt_num_hidden != num_hidden:
+            print(f"[init] overriding --num-hidden {num_hidden} -> "
+                  f"{ckpt_num_hidden} from checkpoint")
+            num_hidden = ckpt_num_hidden
 
     here = os.path.dirname(os.path.abspath(__file__))
     _, test_loader, digits = make_mnist_subset(
@@ -95,12 +126,11 @@ def main():
             daq=clamp,
             num_classes=len(digits),
             num_steps=args.num_steps,
-            num_hidden=args.num_hidden,
+            num_hidden=num_hidden,
             init_scale_pA=args.init_scale_pA,
         )
-        if args.init_from:
-            sd = torch.load(args.init_from, map_location="cpu")
-            missing, unexpected = model.load_state_dict(sd, strict=False)
+        if ckpt_state is not None:
+            missing, unexpected = model.load_state_dict(ckpt_state, strict=False)
             print(f"[init] {args.init_from}  "
                   f"missing={len(missing)}  unexpected={len(unexpected)}")
         model.eval()

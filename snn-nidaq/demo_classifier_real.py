@@ -68,15 +68,15 @@ def parse_args():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--dummy", action="store_true",
                    help="Use ni_torch_dummy instead of libni.so (dry run).")
-    p.add_argument("--epochs", type=int, default=20)
+    p.add_argument("--epochs", type=int, default=30)
     p.add_argument("--batch-size", type=int, default=1)
-    p.add_argument("--num-steps", type=int, default=5000,
+    p.add_argument("--num-steps", type=int, default=1000,
                    help="Time steps per sample (dt=0.1 ms). 5000 = 500 ms.")
     p.add_argument("--n-per-class", type=int, default=20)
     p.add_argument("--n-per-class-test", type=int, default=10)
     p.add_argument("--lr", type=float, default=3e-4)
     p.add_argument("--num-hidden", type=int, default=64)
-    p.add_argument("--init-scale-pA", type=float, default=300.0)
+    p.add_argument("--init-scale-pA", type=float, default=100.0)
     p.add_argument("--digits", type=int, nargs="+", default=[0, 1, 7])
     p.add_argument("--init-from", type=str, default=None,
                    help="Load a state_dict (e.g. snn-nidaq/runs/<ts>_classifier.pt).")

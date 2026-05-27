@@ -121,6 +121,10 @@ class SNN_DAQ_Classifier(nn.Module):
     init_scale_pA : float
         Initial value of the learnable scalar that converts the
         bottleneck projection into picoamps before it hits the DAQ.
+    max_abs_pA : float
+        Hard physiological clamp (pA) applied via tanh to the
+        bottleneck current before it is sent to the DAQ. Prevents
+        runaway currents (e.g. >>1 nA) that would kill a real cell.
     beta, alpha : float
         Initial values for ``snn.Synaptic`` membrane / synaptic decays
         (both learnable, matching the convention in
@@ -136,6 +140,7 @@ class SNN_DAQ_Classifier(nn.Module):
         num_classes: int = 3,
         num_steps: int = 50,
         init_scale_pA: float = 50.0,
+        max_abs_pA: float = 500.0,
         beta: float = 0.9,
         alpha: float = 0.8,
     ):
@@ -166,6 +171,12 @@ class SNN_DAQ_Classifier(nn.Module):
         # Learnable amplitude in pA. tanh-squashed below so it stays
         # in a physiologically sane range and doesn't blow the
         # amplifier headroom.
+        # Physiological saturation limit (pA). Fixed, not learnable —
+        # this is a safety rail for the real cell, not a free
+        # parameter. tanh-squashed in _run_encoder.
+        self.register_buffer(
+            "max_abs_pA", torch.tensor(float(max_abs_pA))
+        )
         self.scale_pA = nn.Parameter(torch.tensor(float(init_scale_pA)))
 
         # Head ---------------------------------------------------------
@@ -205,7 +216,13 @@ class SNN_DAQ_Classifier(nn.Module):
             scalar = self.fc_bn(mem).squeeze(-1)        # (B,)
             cur_b.append(scalar)
         cur = torch.stack(cur_b, dim=0)                 # (T, B)
-        return cur * self.scale_pA
+        # Squash into ±max_abs_pA so the real cell never sees more
+        # current than its amplifier / biology can handle. The
+        # learnable scale_pA still controls the *slope* near zero
+        # (gain), but the asymptote is hard-bounded.
+        return self.max_abs_pA * torch.tanh(
+            cur * self.scale_pA / self.max_abs_pA
+        )
 
     def _summarise(self, V: torch.Tensor, spikes: Optional[torch.Tensor]) -> torch.Tensor:
         """V ``(T, B)`` -> features ``(B, 5)``."""
