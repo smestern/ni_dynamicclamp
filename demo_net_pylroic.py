@@ -203,7 +203,7 @@ spike_trains = spikes.spike_trains()
 
 # Plot
 
-import numpy as np
+ import numpy as np
 
 from plotly import tools
 import plotly.graph_objs as go

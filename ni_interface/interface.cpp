@@ -74,8 +74,28 @@ float64 SF_IN;  // scale factor for input
 float64 SF_OUT; // scale factor for output
 
 // ---- Timing state ----
-// TOLERANCE: well above clock_gettime ns resolution; controls busy-wait exit precision.
-const long double TOLERANCE = 5e-7;         // in seconds (~500ns)
+// TOLERANCE: how early the busy-wait is allowed to exit. Because LAST_READ_T
+// advances by the *measured* step, this value is also the per-step rate error:
+// the loop settles at a period of (dt - TOLERANCE + one wait-loop iteration).
+//
+// Lower is NOT automatically better. One iteration of the wait loop costs
+// ~50-70 ns (a clock read plus long double arithmetic), so below that the
+// overshoot granule dominates and the error grows again with the opposite
+// sign. Measured on this rig (TSC clocksource, n=1000, error vs. wall clock):
+//
+//     TOLERANCE   10 kHz      50 kHz
+//     5e-7        -0.4494%    -2.0888%   <- previous value, sized for HPET
+//     5e-8        +0.0204%    +0.1325%
+//     2e-8        +0.0053%    +0.1955%   <- optimum at 10 kHz
+//     1e-8        +0.0290%    +0.2864%
+//     0           +0.0481%    +0.3168%
+//
+// 2e-8 is the empirical minimum at the 10 kHz operating point. Use 5e-8 if
+// routinely running above ~40 kHz, where it is the better compromise.
+// Re-measure with benchmarks/sweep.py if the clocksource ever changes: the
+// old 5e-7 was chosen when this machine ran on HPET, whose 838 ns tick made
+// anything smaller meaningless.
+const long double TOLERANCE = 2e-8;         // in seconds (20 ns)
 int LAST_READ = 0;                          // last read sample count
 long double LAST_READ_T = ClockGetTime();   // last read time
 long double now = ClockGetTime();           // current time
