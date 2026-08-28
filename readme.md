@@ -40,6 +40,30 @@ python benchmarks/sweep.py --grid both --quick --runtime-s 1.0
 python benchmarks/plot_results.py \
     --csv benchmarks/results/size_<timestamp>.csv \
     --x n --out benchmarks/results/size.png
+
+# --logy log-scales the per-step-time panel — use it for a rate sweep,
+# where a wide dt range otherwise flattens the fast end of the plot.
+python benchmarks/plot_results.py \
+    --csv benchmarks/results/rate_<timestamp>.csv \
+    --x dt_ms --out benchmarks/results/rate.png --logx --logy
 ```
 
 Each sweep writes `benchmarks/results/<grid>_<timestamp>.csv` plus per-point `*_read_times.txt` files (sampled every 1000 steps in DEBUG builds) that `plot_results.py --read-times-dir ...` can render as jitter histograms. Benchmarks are *not* recordings — they always build with `-DDEBUG`; do not use the same build for actual experiments.
+
+### Baseline results (2026-08-28)
+
+Rig: AMD Ryzen 7 5700G, NI PCIe-6343, kernel 6.17.0-14-generic with `tsc=reliable` (see note below). `p_conn=0.02`, 3 s runtime/point.
+
+**Size sweep**: fixed at 50 kHz (`dt=0.02 ms`), N swept 100 → 5,000:
+
+![Step time vs. network size at 50 kHz](benchmarks/results/baseline_size.png)
+
+Stable through N=2,000 (mean ≈ 20.1–20.3 µs, rt_factor ≤ 1.014). At N=5,000 the network's own per-step compute exceeds the 20 µs budget (mean 29.6 µs, rt_factor 1.48) a Brian2 compute ceiling, not a clamp-loop or clock issue.
+
+**Rate sweep**: fixed at N=1,000, dt swept 1.0 → 0.01 ms (`--logx --logy`; the dt range spans two decades, so the per-step-time panel is log-scaled or the fast end flattens against the slow end):
+
+![Real-time factor and step time across requested rates](benchmarks/results/baseline_rate.png)
+
+50 kHz (`dt=0.02 ms`) holds at rt_factor 1.006, mean/p99 tracking the dt-budget diagonal. 100 kHz (`dt=0.01 ms`) falls behind (rt_factor 1.34) — DAQ round-trip bound, not expected to close without buffered/streamed I/O.
+
+> **Clocksource note:** these numbers depend on the host clocksource being `tsc`. A clocksource-watchdog false positive (common on some AMD boards) can silently demote the kernel to `hpet`, making every `clock_gettime()` call in the busy-wait loop ~60× slower (~1.2 µs vs. ~20 ns) and pushing step time over budget well before 50 kHz. Check with `cat /sys/devices/system/clocksource/clocksource0/current_clocksource` before trusting a regression here; fix via `tsc=reliable` on the kernel boot line if it's stuck on `hpet`.

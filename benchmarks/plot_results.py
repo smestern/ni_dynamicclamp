@@ -48,6 +48,12 @@ def parse_args(argv=None) -> argparse.Namespace:
                    help="If set, also render a histogram figure to "
                         "<out>_hist.png from saved read_times files.")
     p.add_argument("--logx", action="store_true")
+    p.add_argument("--logy", action="store_true",
+                   help="Log-scale the per-step-time panel. Useful when the "
+                        "sweep spans a wide dt range, where a linear axis "
+                        "flattens the fast end. Only applied to the top "
+                        "panel — the debt panel below can be zero, which "
+                        "log scale can't represent.")
     return p.parse_args(argv)
 
 
@@ -87,6 +93,9 @@ def main(argv=None) -> int:
     ax_top.set_title(f"Dynamic-clamp benchmark: {args.csv.name}")
     ax_top.grid(True, alpha=0.3)
     ax_top.legend(loc="best", fontsize=8)
+    if args.logy:
+        ax_top.set_yscale("log")
+        ax_top.grid(True, which="minor", alpha=0.15)
 
     ax_bot.plot(xs, rt, "o-", color="tab:blue", label="real-time factor")
     ax_bot.axhline(1.0, color="gray", linestyle=":", linewidth=1)
@@ -127,7 +136,11 @@ def _plot_histograms(rows, args, plt) -> None:
     if not files:
         return
     n = len(files)
-    fig, axes = _plt.subplots(n, 1, figsize=(8, 2.0 * n + 1), sharex=True)
+    # sharex=False: a panel whose samples are all identical (zero spread,
+    # common at low N) would otherwise be stretched to fit an outlier in a
+    # *different* panel and collapse to an invisible sliver. Each panel
+    # autoscales to its own data instead.
+    fig, axes = _plt.subplots(n, 1, figsize=(8, 2.0 * n + 1), sharex=False)
     if n == 1:
         axes = [axes]
     for ax, (r, p) in zip(axes, files):

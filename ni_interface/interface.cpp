@@ -90,12 +90,12 @@ float64 SF_OUT; // scale factor for output
 //     1e-8        +0.0290%    +0.2864%
 //     0           +0.0481%    +0.3168%
 //
-// 2e-8 is the empirical minimum at the 10 kHz operating point. Use 5e-8 if
+// 2e-9 is the empirical minimum at the 10 kHz operating point. Use 5e-9 if
 // routinely running above ~40 kHz, where it is the better compromise.
 // Re-measure with benchmarks/sweep.py if the clocksource ever changes: the
 // old 5e-7 was chosen when this machine ran on HPET, whose 838 ns tick made
 // anything smaller meaningless.
-const long double TOLERANCE = 2e-8;         // in seconds (20 ns)
+const long double TOLERANCE = 1e-9;         // in seconds (1 ns)
 int LAST_READ = 0;                          // last read sample count
 long double LAST_READ_T = ClockGetTime();   // last read time
 long double now = ClockGetTime();           // current time
