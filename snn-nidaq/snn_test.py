@@ -56,8 +56,8 @@ class NiDAQ_NET(nn.Module):
 
 
     def _forward(self, x):
-        syn1, mem1 = self.lif1.init_synaptic()
-        syn2, mem2 = self.lif2.init_synaptic()
+        syn1, mem1 = self.lif1.reset_mem()
+        syn2, mem2 = self.lif2.reset_mem()
 
         spk2_rec = []  # Record the output trace of spikes
         mem2_rec = []  # Record the output trace of membrane potential

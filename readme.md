@@ -7,11 +7,11 @@ In this repo are C/C++ Demo scripts for creating (dynamic clamp)[https://www.sci
 Currently, this hardware has been tested with   
 - BNC-2110  
 - PCIE-6321  
-- AMD Ryzen™ 7 5700 (Running Ubuntu LTS with real-time kernel)  
+- AMD Ryzen™ 7 5700 (Running Ubuntu LTS)  
 - 64GB memory  
 
 ### Achievable Speeds
-Currently clamping rates up to 20 kHz have been achieved. I am hoping to push up to 50kHz and would appreciate any tips / pull requests on performance.
+Currently clamping rates up to 50 kHz have been achieved. I am hoping to push up to 100kHz and would appreciate any tips / pull requests on performance.
 
 ## Usage: Brian2
 

@@ -1,174 +1,148 @@
 import ot
+import math
 import torch
 import snntorch as snn
-from snntorch._neurons.neurons import _SpikeTorchConv, _SpikeTensor
 
 #make a new neuron model with biologically plausible parameters
 class sLIFin(snn.SpikingNeuron):
-    #here we want parameters for the LIF neuron, G, C, EL, tau
-    #we also want the parameters for the synapse, alpha and beta
-    #we also want the threshold
-    def __init__(self, R=0.1, EL=-70, tau=0.1, ge=3, taue=0.005, threshold=-40, dt=1e-5, init_hidden=True, **kwargs):
-        super(snn.SpikingNeuron, self).__init__(
-                
-            )
-        #in gigohms convert to ohms
-        self.R = R * 1e9
-        self.EL = EL * 1e-3
-        #in seconds leave as is
-        self.tau = tau 
-        #in nanosiemens convert to siemens
-        self.ge = ge * 1e-9
-        #in seconds leave as is
+    """Trainable synaptic-LIF proxy for a real neuron's *spiking*.
+
+    This model is optimised to predict *when* a real cell spikes, not to
+    reproduce its absolute membrane trace. Dynamics are therefore kept in a
+    normalised, O(1) range (``mem`` starts at 0) so a downstream squashing
+    non-linearity (e.g. ``tanh``) and the surrogate spike gradient both stay
+    in their sensitive regions during training.
+
+    snntorch 1.0 removed ``_SpikeTensor`` / ``_SpikeTorchConv`` and the
+    ``init_flag`` hidden-state protocol. State is now held in lazily-sized
+    buffers (``syn`` / ``mem``) that are resized to match the input on the
+    first forward pass, mirroring :class:`snntorch.Synaptic`.
+
+    The physical time constants seed the learnable per-step decay factors
+    ``alpha = exp(-dt/taue)`` (synaptic) and ``beta = exp(-dt/tau)``
+    (membrane); ``threshold`` is learnable so the proxy can shift its spike
+    boundary to match the target cell. ``R`` / ``EL`` / ``ge`` are retained
+    as reference attributes but deliberately kept out of the (normalised)
+    membrane update.
+
+    Alongside the spike prediction the neuron emits ``psc`` — a
+    post-synaptic-current trace filtered from its *output* spikes
+    (``psc = alpha*psc + spk``, reusing the synaptic decay). This is the
+    STEP 2.5 -> STEP 3 signal that drives the next in-silico layer. Pass the
+    real neuron's measured spikes via ``real_spk`` to run the trace
+    straight-through: the forward ``psc`` is built from the real spikes
+    while gradients still flow back through the proxy's predicted spikes.
+    """
+
+    def __init__(self, R=0.1, EL=-70, tau=0.1, ge=3, taue=0.005,
+                 threshold=1.0, dt=1e-5, init_hidden=False,
+                 reset_mechanism="subtract", learn_decay=True,
+                 learn_threshold=True, **kwargs):
+        super().__init__(
+            threshold=threshold,
+            init_hidden=init_hidden,
+            reset_mechanism=reset_mechanism,
+            learn_threshold=learn_threshold,
+            **kwargs,
+        )
+        # kept for reference / bookkeeping, not used in the normalised update
+        self.R = R
+        self.EL = EL
+        self.ge = ge
+        self.tau = tau
         self.taue = taue
-        #in mV convert to V
-        self.threshold = threshold * 1e-3
-        #in seconds leave as is
         self.dt = dt
-        self.init_hidden = init_hidden
-      
-        for param in [self.R, self.EL, self.tau, self.ge, self.taue, self.threshold]:
-            if not isinstance(param, torch.Tensor):
-                param = torch.as_tensor(param)
-            
-            self._param_register_buffer(param, True)
 
-        if self.init_hidden:
-            self.syn, self.mem = self.init_sLIF()
-
-    def init_sLIF(self):
-        spk = _SpikeTensor(init_flag=False)
-        syn = _SpikeTensor(init_flag=False)
-        mem = _SpikeTensor(init_flag=False)
-        return syn, mem
-
-    def forward(self, input_, syn=False, mem=False):
-
-        if hasattr(syn, "init_flag") or hasattr(
-            mem, "init_flag"
-        ):  # only triggered on first-pass
-            syn, mem = _SpikeTorchConv(syn, mem, input_=input_)
-        elif mem is False and hasattr(
-            self.mem, "init_flag"
-        ):  # init_hidden case
-            self.syn, self.mem = _SpikeTorchConv(
-                self.syn, self.mem, input_=input_
-            )
-
-        if not self.init_hidden:
-            self.reset = self.mem_reset(mem)
-            syn, mem = self._build_state_function(input_, syn, mem)
-
-            if self.state_quant:
-                syn = self.state_quant(syn)
-                mem = self.state_quant(mem)
-
-            if self.inhibition:
-                spk = self.fire_inhibition(mem.size(0), mem)
-            else:
-                spk = self.fire(mem)
-
-            return spk, syn, mem
-
-        # intended for truncated-BPTT where instance variables are
-        # hidden states
-        if self.init_hidden:
-            self._synaptic_forward_cases(mem, syn)
-            self.reset = self.mem_reset(self.mem)
-            self.syn, self.mem = self._build_state_function_hidden(input_)
-
-            if self.state_quant:
-                self.syn = self.state_quant(self.syn)
-                self.mem = self.state_quant(self.mem)
-
-            if self.inhibition:
-                self.spk = self.fire_inhibition(self.mem.size(0), self.mem)
-            else:
-                self.spk = self.fire(self.mem)
-
-            if self.output:
-                return self.spk, self.syn, self.mem
-            else:
-                return self.spk
-
-
-
-    def _base_state_function(self, input_, syn, mem):
-        base_fn_syn = self.alpha.clamp(0, 1) * syn + input_
-        base_fn_mem = self.beta.clamp(0, 1) * mem + base_fn_syn
-        return base_fn_syn, base_fn_mem
-
-    def _base_state_reset_zero(self, input_, syn, mem):
-        base_fn_syn = self.alpha.clamp(0, 1) * syn + input_
-        base_fn_mem = self.beta.clamp(0, 1) * mem + base_fn_syn
-        return 0, base_fn_mem
-
-    def _build_state_function(self, input_, syn, mem):
-        if self.reset_mechanism_val == 0:  # reset by subtraction
-            state_fn = tuple(
-                map(
-                    lambda x, y: x - y,
-                    self._base_state_function(input_, syn, mem),
-                    (0, self.reset * self.threshold),
-                )
-            )
-        elif self.reset_mechanism_val == 1:  # reset to zero
-            state_fn = tuple(
-                map(
-                    lambda x, y: x - self.reset * y,
-                    self._base_state_function(input_, syn, mem),
-                    self._base_state_reset_zero(input_, syn, mem),
-                )
-            )
-        elif self.reset_mechanism_val == 2:  # no reset, pure integration
-            state_fn = self._base_state_function(input_, syn, mem)
-        return state_fn
-
-    def _base_state_function_hidden(self, input_):
-        base_fn_syn = self.alpha.clamp(0, 1) * self.syn + input_
-        base_fn_mem = self.beta.clamp(0, 1) * self.mem + base_fn_syn
-        return base_fn_syn, base_fn_mem
-
-    def _base_state_reset_zero_hidden(self, input_):
-        base_fn_syn = self.alpha.clamp(0, 1) * self.syn + input_
-        base_fn_mem = self.beta.clamp(0, 1) * self.mem + base_fn_syn
-        return 0, base_fn_mem
-
-    def _build_state_function_hidden(self, input_):
-        if self.reset_mechanism_val == 0:  # reset by subtraction
-            state_fn = tuple(
-                map(
-                    lambda x, y: x - y,
-                    self._base_state_function_hidden(input_),
-                    (0, self.reset * self.threshold),
-                )
-            )
-        elif self.reset_mechanism_val == 1:  # reset to zero
-            state_fn = tuple(
-                map(
-                    lambda x, y: x - self.reset * y,
-                    self._base_state_function_hidden(input_),
-                    self._base_state_reset_zero_hidden(input_),
-                )
-            )
-        elif self.reset_mechanism_val == 2:  # no reset, pure integration
-            state_fn = self._base_state_function_hidden(input_)
-        return state_fn
-
-    def _param_register_buffer(self, alpha, learn_alpha):
-        if not isinstance(alpha, torch.Tensor):
-            alpha = torch.as_tensor(alpha)
-        if learn_alpha:
+        # per-step decay factors derived from the time constants
+        alpha = torch.as_tensor(math.exp(-dt / taue), dtype=torch.float)
+        beta = torch.as_tensor(math.exp(-dt / tau), dtype=torch.float)
+        if learn_decay:
             self.alpha = torch.nn.Parameter(alpha)
+            self.beta = torch.nn.Parameter(beta)
         else:
             self.register_buffer("alpha", alpha)
+            self.register_buffer("beta", beta)
 
-    def _synaptic_forward_cases(self, mem, syn):
-        if mem is not False or syn is not False:
+        self._init_mem()
+
+    def _init_mem(self):
+        self.register_buffer("syn", torch.zeros(0), False)
+        self.register_buffer("mem", torch.zeros(0), False)
+        self.register_buffer("psc", torch.zeros(0), False)
+
+    def reset_mem(self):
+        self.syn = torch.zeros_like(self.syn, device=self.syn.device)
+        self.mem = torch.zeros_like(self.mem, device=self.mem.device)
+        self.psc = torch.zeros_like(self.psc, device=self.psc.device)
+        return self.syn, self.mem, self.psc
+
+    def init_synaptic(self):
+        """Backwards-compatible alias for :meth:`reset_mem`."""
+        return self.reset_mem()
+
+    def forward(self, input_, syn=None, mem=None, psc=None, real_spk=None):
+        if syn is not None:
+            self.syn = syn
+        if mem is not None:
+            self.mem = mem
+        if psc is not None:
+            self.psc = psc
+
+        if self.init_hidden and (
+            syn is not None or mem is not None or psc is not None
+        ):
             raise TypeError(
-                "When `init_hidden=True`, Synaptic expects 1 input argument."
+                "`mem`, `syn` or `psc` should not be passed as an argument "
+                "while `init_hidden=True`"
             )
-        
+
+        if self.syn.shape != input_.shape:
+            self.syn = torch.zeros_like(input_, device=self.syn.device)
+        if self.mem.shape != input_.shape:
+            self.mem = torch.zeros_like(input_, device=self.mem.device)
+        if self.psc.shape != input_.shape:
+            self.psc = torch.zeros_like(input_, device=self.psc.device)
+
+        self.reset = self.mem_reset(self.mem)
+        self.syn, self.mem = self._build_state_function(input_)
+
+        if self.state_quant:
+            self.syn = self.state_quant(self.syn)
+            self.mem = self.state_quant(self.mem)
+
+        if self.inhibition:
+            spk = self.fire_inhibition(self.mem.size(0), self.mem)
+        else:
+            spk = self.fire(self.mem)
+
+        # STEP 2.5 -> STEP 3: post-synaptic trace from the OUTPUT spikes.
+        # With `real_spk` supplied, run straight-through -- the forward trace
+        # follows the real cell's measured spikes while gradients keep
+        # flowing through the proxy's predicted spikes.
+        if real_spk is not None:
+            spk = spk + (real_spk - spk).detach()
+        self.psc = self.alpha.clamp(0, 1) * self.psc + spk
+
+        if self.output:
+            return spk, self.syn, self.mem, self.psc
+        elif self.init_hidden:
+            return spk
+        else:
+            return spk, self.syn, self.mem, self.psc
+
+    def _base_state_function(self, input_):
+        base_fn_syn = self.alpha.clamp(0, 1) * self.syn + input_
+        base_fn_mem = self.beta.clamp(0, 1) * self.mem + base_fn_syn
+        return base_fn_syn, base_fn_mem
+
+    def _build_state_function(self, input_):
+        syn, mem = self._base_state_function(input_)
+        if self.reset_mechanism_val == 0:  # reset by subtraction
+            mem = mem - self.reset * self.threshold
+        elif self.reset_mechanism_val == 1:  # reset to zero
+            mem = mem - self.reset * mem
+        return syn, mem
+
 
 
 class EMD():
@@ -201,3 +175,119 @@ class EMD():
         x = x.reshape(num_steps, average_window)
         x = torch.mean(x, dim=1)
         return x
+
+
+class VanRossum:
+    """Van Rossum spike-train distance (differentiable, spike-only).
+
+    Each spike train is convolved with a causal exponential kernel
+    ``h(t) = exp(-t/tau)`` and the distance is the L2 difference of the
+    filtered traces, ``D^2 = (dt/tau) * sum_t (f_x - f_y)^2``. Unlike
+    :class:`EMD` it needs no binning and stays fully differentiable, so it
+    is the natural objective when fitting the proxy purely on spike timing.
+    """
+
+    def __init__(self, tau=5e-3, dt=1e-4):
+        self.tau = tau
+        self.dt = dt
+
+    def __call__(self, x, y):
+        # x, y: (T, B) spike trains at dt resolution.
+        decay = math.exp(-self.dt / self.tau)
+        fx = self._filter(x, decay)
+        fy = self._filter(y, decay)
+        d2 = ((fx - fy) ** 2).sum(dim=0) * (self.dt / self.tau)
+        return d2.mean()
+
+    def _filter(self, s, decay):
+        out = []
+        trace = torch.zeros_like(s[0])
+        for t in range(s.shape[0]):
+            trace = decay * trace + s[t]
+            out.append(trace)
+        return torch.stack(out, dim=0)
+
+
+def fit_proxy(proxy, real_neuron, input_gen, *, n_iter=600, lr=5e-2,
+              spike_loss="vanrossum", mem_weight=1.0, tau=5e-3, dt=1e-4,
+              duration=0.25, bin_size=2e-3, device=None, use_scheduler=True,
+              callback=None, verbose=True):
+    """Fit a differentiable spiking ``proxy`` to a black-box ``real_neuron``.
+
+    Parameters
+    ----------
+    proxy : torch.nn.Module
+        ``proxy(cur)`` -> ``(spk, mem)`` each shaped ``(T, B)``, differentiable
+        in ``proxy.parameters()``.
+    real_neuron : callable
+        ``real_neuron(cur)`` -> ``(spk, mem)`` shaped ``(T, B)``. Treated as the
+        (detached) target; ``cur`` is the ``(B, T)`` current batch.
+    input_gen : callable or torch.Tensor
+        ``input_gen()`` -> current batch ``(B, T)``, or a fixed tensor reused
+        every iteration.
+    spike_loss : {"vanrossum", "emd"} or callable
+        Spike-train objective. ``"vanrossum"`` is the spike-only default.
+    mem_weight : float
+        Weight on the membrane MSE term; set to ``0`` for a spike-only fit.
+    callback : callable(it, loss, tensors) or None
+        Optional hook (e.g. live plotting); ``tensors`` holds the current
+        ``cur`` / ``proxy_spk`` / ``proxy_mem`` / ``real_spk`` / ``real_mem``.
+
+    Returns
+    -------
+    list[float]
+        Per-iteration loss history.
+    """
+    if device is None:
+        device = next(proxy.parameters()).device
+
+    if spike_loss == "vanrossum":
+        spk_loss_fn = VanRossum(tau=tau, dt=dt)
+    elif spike_loss == "emd":
+        spk_loss_fn = EMD(dt=dt, duration=duration, bin_size=bin_size)
+    elif callable(spike_loss):
+        spk_loss_fn = spike_loss
+    else:
+        raise ValueError(
+            "spike_loss must be 'vanrossum', 'emd', or a callable; got "
+            f"{spike_loss!r}"
+        )
+    mem_loss_fn = torch.nn.MSELoss()
+
+    opt = torch.optim.Adam(proxy.parameters(), lr=lr)
+    sched = (
+        torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=n_iter, eta_min=1e-9)
+        if use_scheduler else None
+    )
+
+    hist = []
+    for it in range(n_iter):
+        cur = input_gen() if callable(input_gen) else input_gen
+        cur = cur.to(device)
+
+        proxy_spk, proxy_mem = proxy(cur)
+        with torch.no_grad():
+            real_spk, real_mem = real_neuron(cur)
+        real_spk = real_spk.to(device)
+        real_mem = real_mem.to(device)
+
+        loss = torch.mean(spk_loss_fn(proxy_spk, real_spk))
+        if mem_weight:
+            loss = loss + mem_weight * mem_loss_fn(proxy_mem, real_mem)
+
+        opt.zero_grad()
+        loss.backward()
+        opt.step()
+        if sched is not None:
+            sched.step()
+
+        hist.append(float(loss.detach().cpu()))
+        if callback is not None:
+            callback(it, hist[-1], dict(
+                cur=cur, proxy_spk=proxy_spk, proxy_mem=proxy_mem,
+                real_spk=real_spk, real_mem=real_mem,
+            ))
+        if verbose:
+            print(f"[fit_proxy] iter {it:4d}  loss={hist[-1]:.4f}")
+
+    return hist

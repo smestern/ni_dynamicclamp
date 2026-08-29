@@ -205,7 +205,7 @@ class SNN_DAQ_Classifier(nn.Module):
         """Return the bottleneck current ``(T, B)`` in picoamps."""
         spk_in = self.encode(x)                        # (T, B, 784)
         T, B, _ = spk_in.shape
-        syn, mem = self.lif1.init_synaptic()
+        syn, mem = self.lif1.reset_mem()
         cur_b = []
         for t in range(T):
             cur1 = self.fc1(spk_in[t])

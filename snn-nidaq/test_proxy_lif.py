@@ -49,128 +49,111 @@ alpha = 0.05 #synaptic decay rate in seconds
 class proxy_net(nn.Module):
     def __init__(self) -> None:
         super().__init__()
-        self.beta_1 = nn.Parameter(torch.tensor(beta))
-        self.alpha_1 = nn.Parameter(torch.tensor(alpha))
-        self.threshold = nn.Parameter(torch.tensor(0.8))
         self.scale_fator = nn.Parameter(torch.tensor(1.0))
-        self.lif1 = utils.sLIFin(0.1, 30, -50, 0.0002, 0.1, 0.1, -20)#snn.Synaptic(beta=self.beta_1, alpha=self.alpha_1, init_hidden=False,  learn_alpha=True, learn_beta=True, learn_threshold=False, 
-                        #         threshold=self.threshold)
+        self.lif1 = utils.sLIFin(0.1, 30, -50, 0.0002, 0.1, 0.1, -20)
         self.tanh = nn.Tanh()
-        
-    def _forward(self, x):
-        syn1, mem1 = self.lif1.init_synaptic()
-
-        #record the cur, syn1 and mem for the chosen unit
-        input_rec = []
-        spikes_rec = []
-        mem_rec = []
-        for step in range(num_steps):
-                cur1 = x[:, step] 
-                spk1, syn1, mem1 = self.lif1(cur1 * self.scale_fator, torch.tensor(0), syn1, mem1)
-                mem1 = self.tanh(mem1)
-                #record the cur, syn1 and mem for the chosen unit======================================
-                input_rec.append(cur1)
-                spikes_rec.append(spk1)
-                mem_rec.append(mem1)
-
-
-        return  torch.stack(input_rec, dim=0), torch.stack(spikes_rec, dim=0), torch.stack(mem_rec, dim=0)
 
     def forward(self, x):
-        cur_daq, spikes_daq, mem_daq = self._forward(x)
+        """Run the proxy over a current batch ``(B, T)``.
 
-        #write and read from DAQ
-        #the curr and spikes are in the format of [num_steps, batch_size, num_units]
-        #we want to write the spikes of the chosen unit to the DAQ
-        out_mem = []
-        spk_ = []
-        for x in range(cur_daq.shape[1]):
-            temp_cur = cur_daq[:, x]
+        Returns ``(spikes, mem)`` each shaped ``(T, B)``.
+        """
+        syn1, mem1, psc1 = self.lif1.reset_mem()
+        spikes_rec = []
+        mem_rec = []
+        for step in range(x.shape[1]):
+            cur1 = x[:, step]
+            spk1, syn1, mem1, psc1 = self.lif1(cur1 * self.scale_fator, syn1, mem1, psc1)
+            mem1 = self.tanh(mem1)
+            spikes_rec.append(spk1)
+            mem_rec.append(mem1)
+        return torch.stack(spikes_rec, dim=0), torch.stack(mem_rec, dim=0)
 
-            if _daq_layer is None:
-                # Offline proxy via brian2 LIF model.
-                resp, spikes = lif_model(temp_cur.detach().cpu().numpy() * 1000, dt=dt)
-            else:
-                # Real DAQ via NiDAQClampLayer. Convert the (units-free)
-                # network signal to pA the same way lif_model does internally
-                # (input * 1000) and feed it through the clamp. Spikes are
-                # taken from libni's proxy-spike flag if enabled, else zeros.
-                I_pA = (temp_cur.detach().cpu() * 1000.0).to(torch.float32)
-                with torch.no_grad():
-                    v_volts = _daq_layer(I_pA).cpu().numpy()
-                resp = v_volts * 1000.0  # V -> mV (parity with lif_model)
-                spikes = (
-                    _daq_layer.last_spikes.cpu().numpy()
-                    if _daq_layer.last_spikes is not None
-                    else np.zeros_like(resp)
-                )
 
-            _x_proxy = torch.tensor(resp, dtype=torch.float32)
-            out_mem.append(torch.tensor(_x_proxy, dtype=torch.float32, device=device))
-            spk_.append(torch.tensor(spikes, dtype=torch.float32, device=device))
+def real_neuron(cur):
+    """Target neuron driven by current batch ``cur`` ``(B, T)``.
 
-        out_mem = torch.stack(out_mem, dim=1)
-        out_mem = (out_mem - -70)/(-40 - -70)
-        spk_ = torch.stack(spk_, dim=1)
-        return mem_daq,  out_mem, spikes_daq, spk_
-        
-    
+    Uses the offline brian2 ``lif_model`` or, with ``--use-daq``, the live
+    rig via ``NiDAQClampLayer``. Returns ``(spikes, mem)`` each ``(T, B)``
+    with ``mem`` normalised to ~[0, 1] over the [-70, -40] mV span.
+    """
+    out_mem = []
+    spk_ = []
+    for b in range(cur.shape[0]):
+        series = cur[b]
+        if _daq_layer is None:
+            # Offline proxy via brian2 LIF model.
+            resp, spikes = lif_model(series.detach().cpu().numpy() * 1000, dt=dt)
+        else:
+            # Real DAQ via NiDAQClampLayer. Convert the (units-free)
+            # network signal to pA the same way lif_model does internally
+            # (input * 1000) and feed it through the clamp. Spikes are
+            # taken from libni's proxy-spike flag if enabled, else zeros.
+            I_pA = (series.detach().cpu() * 1000.0).to(torch.float32)
+            with torch.no_grad():
+                v_volts = _daq_layer(I_pA).cpu().numpy()
+            resp = v_volts * 1000.0  # V -> mV (parity with lif_model)
+            spikes = (
+                _daq_layer.last_spikes.cpu().numpy()
+                if _daq_layer.last_spikes is not None
+                else np.zeros_like(resp)
+            )
+        out_mem.append(torch.as_tensor(resp, dtype=torch.float32, device=device))
+        spk_.append(torch.as_tensor(spikes, dtype=torch.float32, device=device))
+
+    real_mem = torch.stack(out_mem, dim=1)          # (T, B)
+    real_mem = (real_mem - -70) / (-40 - -70)
+    real_spk = torch.stack(spk_, dim=1)             # (T, B)
+    return real_spk, real_mem
+
+
 #daq = ni.init_ni(0.1, 0.1, 1/0.05)
 
 # Define Network
-network = proxy_net()
+network = proxy_net().to(device)
 
 
-# Define Loss
-error = nn.MSELoss()
-error2 = utils.EMD(dt=dt, duration=0.25, bin_size=0.002)
+def input_gen():
+    inp = torch.randn(batch_size, num_steps, device=device)
+    inp[:, 200:-200] += 0.25   # step-current epoch in the middle
+    return inp
 
-# Define Optimizer
-learning_rate = 5e-2
-momentum = 0.9
-optimizer = torch.optim.Adam(network.parameters(), lr=learning_rate)
-lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=1000, eta_min=1e-9)
+
+# Live-plotting callback (keeps fit_proxy itself headless).
 loss_hist = []
-for _ in range(600):
-    # Forward pass
-    # Initialize input
-    input = torch.randn(batch_size, num_steps, device=device)
-    #at time step 100, set the input to 1
-    input[:, 200:-200] += 0.25
-    output, _output_proxy, spk, spk_proxy = network(input)
-    #loss is between the output and the proxy
-    loss = error(output, _output_proxy)
-    loss += torch.mean(error2(spk, spk_proxy))
 
-    loss_hist.append(loss.detach().cpu().numpy())
-    # Backward pass
-    optimizer.zero_grad()
-    loss.backward()
-    optimizer.step()
-    if loss < 5.0:
-        lr_scheduler.step()
-    print(loss)
-    #plot the output and the proxy
+
+def _plot_cb(it, loss, t):
+    loss_hist.append(loss)
     plt.figure(num=1)
     plt.clf()
-    plt.plot(output.detach().cpu().numpy()[:,0], label="output")
-    plt.plot(_output_proxy.detach().cpu().numpy()[:,0], label="proxy")
-    #plot the spikes
+    plt.plot(t["proxy_mem"].detach().cpu().numpy()[:, 0], label="proxy")
+    plt.plot(t["real_mem"].detach().cpu().numpy()[:, 0], label="real")
     plt.legend()
     plt.pause(0.01)
     plt.figure(num=3)
     plt.clf()
-    plt.plot(spk.detach().cpu().numpy()[:,0], label="output")
-    plt.plot(spk_proxy.detach().cpu().numpy()[:,0] + 1, label="proxy")
+    plt.plot(t["proxy_spk"].detach().cpu().numpy()[:, 0], label="proxy")
+    plt.plot(t["real_spk"].detach().cpu().numpy()[:, 0] + 1, label="real")
+    plt.legend()
     plt.pause(0.01)
     plt.figure(num=2)
     plt.clf()
     plt.plot(loss_hist)
     plt.pause(0.01)
 
+
+# Fit the proxy to the real neuron: spike-only van Rossum distance plus a
+# membrane-MSE regulariser (set mem_weight=0 for a pure spike-timing fit).
+utils.fit_proxy(
+    network, real_neuron, input_gen,
+    n_iter=600, lr=5e-2, spike_loss="vanrossum", mem_weight=1.0,
+    tau=5e-3, dt=dt, device=device, callback=_plot_cb,
+)
+
 #clean up the DAQ
 #ni.clean_up()
-#plot the losst hist
+#plot the loss hist
 plt.figure()
 plt.plot(loss_hist)
 plt.show()
