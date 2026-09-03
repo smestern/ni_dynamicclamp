@@ -168,6 +168,7 @@ class SNN_DAQ_Classifier(nn.Module):
         # One scalar current per timestep per batch element. Bias on so
         # the cell can sit at a non-zero baseline drive.
         self.fc_bn = nn.Linear(num_hidden, 1, bias=True)
+        self.bn_bottleneck = nn.BatchNorm1d(1)
         # Learnable amplitude in pA. tanh-squashed below so it stays
         # in a physiologically sane range and doesn't blow the
         # amplifier headroom.
@@ -216,6 +217,8 @@ class SNN_DAQ_Classifier(nn.Module):
             scalar = self.fc_bn(mem).squeeze(-1)        # (B,)
             cur_b.append(scalar)
         cur = torch.stack(cur_b, dim=0)                 # (T, B)
+        T_, B_ = cur.shape
+        cur = self.bn_bottleneck(cur.reshape(T_ * B_, 1)).reshape(T_, B_)
         # Squash into ±max_abs_pA so the real cell never sees more
         # current than its amplifier / biology can handle. The
         # learnable scale_pA still controls the *slope* near zero

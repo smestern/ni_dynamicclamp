@@ -41,20 +41,29 @@ def evaluate(model: SNN_DAQ_Classifier, loader) -> float:
 
 
 def main():
-    torch.manual_seed(0)
-
     # ---- config ----
+    seed = None               # None -> random each run; set an int to reproduce
     digits = (0, 1, 7)
     epochs = 15
     batch_size = 16
     num_steps = 5000          # 500 ms of simulated time at dt=0.1 ms
-    lr = 3e-3
-    init_scale_pA = 300.0
+    lr = 5e-4
+    init_scale_pA = 150.0     # keep the tanh bottleneck out of saturation
+    grad_clip = 1.0           # cap update norm so scale_pA/fc_bn can't run away
     # Proxy-spike thresholds chosen so the passive dummy LIF can
     # actually cross threshold given the above current scale; on the
     # real rig you'd use the standard -30 / -70 mV pair (the defaults).
     vthresh_mV = -55.0
     vreset_mV = -70.0
+
+    # Seed both torch (weight init, DataLoader shuffle) and the data
+    # subset from a single value; torch.seed() draws OS entropy when
+    # no fixed seed is given so runs differ.
+    if seed is None:
+        seed = torch.seed()
+    else:
+        torch.manual_seed(seed)
+    print(f"[seed] {seed}")
 
     # ---- data ----
     train_loader, test_loader, digits = make_mnist_subset(
@@ -62,6 +71,7 @@ def main():
         n_per_class_train=200,
         n_per_class_test=50,
         batch_size=batch_size,
+        seed=seed,
     )
     print(f"[data] train={len(train_loader.dataset)}  test={len(test_loader.dataset)}  "
           f"classes={digits}")
@@ -98,6 +108,7 @@ def main():
                 logits = model(x)
                 loss = loss_fn(logits, y)
                 loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
                 opt.step()
                 running_loss += loss.item()
                 n_batches += 1
