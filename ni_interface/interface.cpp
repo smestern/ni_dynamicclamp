@@ -169,7 +169,7 @@ extern "C"
                 // Analog input channel
                 DAQmxErrChk(DAQmxCreateAIVoltageChan(taskHandle, aIChan, "", DAQmx_Val_RSE, -1.0, 1.0, DAQmx_Val_Volts, NULL));
                 // Analog output channel
-                DAQmxErrChk(DAQmxCreateAOVoltageChan(taskHandleWrite, aOChan, "", -2.0, 2.0, DAQmx_Val_Volts, NULL));
+                DAQmxErrChk(DAQmxCreateAOVoltageChan(taskHandleWrite, aOChan, "", -5.0, 5.0, DAQmx_Val_Volts, NULL)); //Should probably parameterize the voltage range based on the expected input/output
 
                 // DAQmxErrChk (DAQmxCfgSampClkTiming(taskHandle,"",SAMPLE_RATE,DAQmx_Val_Rising,DAQmx_Val_ContSamps,1000));
 
