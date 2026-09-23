@@ -16,3 +16,6 @@ ni_interface/tests/*.so
 AGENTS.md
 .github/**/*
 benchmarks/results/*
+!benchmarks/results/size.png
+!benchmarks/results/rate.png
+membrane_potential.png

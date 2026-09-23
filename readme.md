@@ -56,13 +56,13 @@ Rig: AMD Ryzen 7 5700G, NI PCIe-6343, kernel 6.17.0-14-generic with `tsc=reliabl
 
 **Size sweep**: fixed at 50 kHz (`dt=0.02 ms`), N swept 100 → 5,000:
 
-![Step time vs. network size at 50 kHz](benchmarks/results/baseline_size.png)
+![Step time vs. network size at 50 kHz](benchmarks/results/size.png)
 
 Stable through N=2,000 (mean ≈ 20.1–20.3 µs, rt_factor ≤ 1.014). At N=5,000 the network's own per-step compute exceeds the 20 µs budget (mean 29.6 µs, rt_factor 1.48) a Brian2 compute ceiling.
 
 **Rate sweep**: fixed at N=1,000, dt swept 1.0 -> 0.01 ms (`--logx --logy`; the dt range spans two decades, so the per-step-time panel is log-scaled or the fast end flattens against the slow end):
 
-![Real-time factor and step time across requested rates](benchmarks/results/baseline_rate.png)
+![Real-time factor and step time across requested rates](benchmarks/results/rate.png)
 
 50 kHz (`dt=0.02 ms`) holds at rt_factor 1.006, mean/p99 tracking the dt-budget diagonal. 100 kHz (`dt=0.01 ms`) falls behind (rt_factor 1.34) — DAQ round-trip bound, not expected to close without buffered/streamed I/O.
 
