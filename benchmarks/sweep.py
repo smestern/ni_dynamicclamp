@@ -34,8 +34,8 @@ RUNNER = THIS_DIR / "bench_runner.py"
 RESULTS_DIR = THIS_DIR / "results"
 
 
-DEFAULT_SIZES = [100, 250, 500, 1000, 2000, 5000]
-DEFAULT_DTS_MS = [0.01, 0.05, 0.1, 0.2, 0.5, 1.0]
+DEFAULT_SIZES = [100, 250, 500, 1000, 2000, 5000, 10000] #Density of connections can matter here but for now this is simple
+DEFAULT_DTS_MS = [0.01, 0.02, 0.05, 0.1, 0.2, 0.5] #in ms
 QUICK_SIZES = [100, 500, 1000]
 QUICK_DTS_MS = [0.1, 0.2, 0.5]
 

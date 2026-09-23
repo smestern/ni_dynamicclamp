@@ -2,6 +2,9 @@ from brian2 import *
 from ni_interface.ni_brian2 import *
 import os
 import time
+import matplotlib
+
+matplotlib.use('agg')
 seed(43)
 DYN_CLAMP = True
 defaultclock.dt = 0.1*ms
