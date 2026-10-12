@@ -64,7 +64,7 @@ char aIChan[256] = "Dev1/ai0"; // default analog input channel
 char aOChan[256] = "Dev1/ao0"; // default analog output channel
 
 int SAMPLE_RATE = 100000; // in Hz
-int32 error = 0;
+static int32 error = 0; // static: a global `error` would be interposed by glibc's error() in libni.so
 TaskHandle taskHandle = 0;
 TaskHandle taskHandleWrite = 0;
 static int totalRead = 0;
@@ -95,7 +95,7 @@ float64 SF_OUT; // scale factor for output
 // Re-measure with benchmarks/sweep.py if the clocksource ever changes: the
 // old 5e-7 was chosen when this machine ran on HPET, whose 838 ns tick made
 // anything smaller meaningless.
-const long double TOLERANCE = 1e-9;         // in seconds (1 ns)
+const long double TOLERANCE = 5e-9;         // in seconds (1 ns)
 int LAST_READ = 0;                          // last read sample count
 long double LAST_READ_T = ClockGetTime();   // last read time
 long double now = ClockGetTime();           // current time
@@ -431,19 +431,17 @@ double step_clamp(double t, double I)
         }
 
         LAST_NET_T = t;
-        // Anchor to target time, not measured time: prevents overshoot from
-        // accumulating across steps. Each deadline is exactly dt after the previous.
         LAST_READ_T += step_time_real;
         steps_taken++;
         total_rate += step_time_real;
 
-#ifdef DEBUG
+        #ifdef DEBUG
         // only store the read times every 1000 steps
         if (steps_taken % 1000 == 0)
         {
                 read_times[steps_taken / 1000 - 1] = step_time_real;
         }
-#endif
+        #endif
 
         if (proxy_spike)
         {
